@@ -1,0 +1,32 @@
+name: Deploy Worker to Cloudflare
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/src/**'
+      - 'worker/wrangler.toml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to Cloudflare Workers
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          workingDirectory: worker
+

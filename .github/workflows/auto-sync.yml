@@ -1,0 +1,67 @@
+name: Auto-Sync Knowledge Graph
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # every hour
+  workflow_dispatch:
+
+# Never run two syncs in parallel — queue them
+concurrency:
+  group: auto-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Untrack graph.json if still in git index
+        run: |
+          git rm --cached graph/graph.json 2>/dev/null || true
+
+      - name: Regenerate graph.json (v3.0 — O(n) inverted index, scales to unlimited files)
+        run: |
+          python3 scripts/update_graph.py
+
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git reset HEAD graph/graph.json 2>/dev/null || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-sync [$(date '+%Y-%m-%d %H:%M:%S')]"
+            git pull --rebase origin main
+            git push
+          fi
+
+      - name: Worker health check
+        continue-on-error: true
+        run: |
+          echo "=== Worker health ==="
+          curl -sf https://your-worker-subdomain.workers.dev/health | python3 -m json.tool || echo "Worker unreachable"
+
+      - name: Summary
+        run: |
+          echo "## Sync Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- Time: $(date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_STEP_SUMMARY
+          echo "- Total .md files: $(find . -name '*.md' | grep -v .git | wc -l)" >> $GITHUB_STEP_SUMMARY
+          NODES=$(python3 -c 'import json; g=json.load(open("graph/graph.json")); print(g["meta"]["node_count"])')
+          EDGES=$(python3 -c 'import json; g=json.load(open("graph/graph.json")); print(g["meta"]["edge_count"])')
+          echo "- Graph: ${NODES} nodes, ${EDGES} edges" >> $GITHUB_STEP_SUMMARY

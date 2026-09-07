@@ -1,0 +1,31 @@
+{
+  "name": "second-brain",
+  "version": "1.1.0",
+  "description": "Codex auto layer for querying an LNM Brain deployment before meaningful work and ingesting durable outcomes after tasks.",
+  "author": {
+    "name": "LNM Brain Contributors",
+    "url": "https://github.com/your-username/your-repo"
+  },
+  "homepage": "https://github.com/your-username/your-repo/tree/main/codex-plugin/second-brain",
+  "repository": "https://github.com/your-username/your-repo",
+  "license": "UNLICENSED",
+  "keywords": ["second-brain", "codex", "knowledge-base", "memory", "ingest", "retrieval"],
+  "skills": "./skills/",
+  "hooks": "./hooks.json",
+  "interface": {
+    "displayName": "Second Brain Auto Layer",
+    "shortDescription": "Auto-query and auto-ingest guidance for Codex sessions.",
+    "longDescription": "A reusable Codex plugin bundle that queries the current user's independently deployed LNM Brain before meaningful work and ingests durable outcomes after meaningful tasks.",
+    "developerName": "LNM Brain Contributors",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://your-worker-subdomain.workers.dev",
+    "defaultPrompt": [
+      "Use my Second Brain before starting meaningful work.",
+      "Ingest the durable outcome after the task is complete.",
+      "Use compressed wiki pages as primary context."
+    ],
+    "brandColor": "#0F766E",
+    "screenshots": []
+  }
+}

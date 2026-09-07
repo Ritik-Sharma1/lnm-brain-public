@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lnm-Brain Capture Tool</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        input[type="text"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        textarea {
+            min-height: 200px;
+            resize: vertical;
+        }
+        
+        .row {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .col {
+            flex: 1;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.loading {
+            background: #e2e3e5;
+            color: #383d41;
+            border: 1px solid #d6d8db;
+        }
+        
+        .info {
+            background: #e7f3ff;
+            border: 1px solid #b8daff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #004085;
+        }
+        
+        .info code {
+            background: rgba(0, 0, 0, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+        
+        .quick-actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .quick-action {
+            flex: 1;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .quick-action:hover {
+            background: #e9ecef;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧠 Lnm-Brain Capture Tool</h1>
+        <p class="subtitle">Capture conversations, notes, and ideas to your Second Brain</p>
+        
+        <div class="info">
+            <strong>Quick Start:</strong> Paste content below and click Capture. 
+            Your data will be saved to <code>your-username/your-repo</code> on GitHub.
+        </div>
+        
+        <div class="quick-actions">
+            <button class="quick-action" onclick="fillTemplate('conversation')">📝 Conversation Template</button>
+            <button class="quick-action" onclick="fillTemplate('note')">📌 Note Template</button>
+            <button class="quick-action" onclick="fillTemplate('idea')">💡 Idea Template</button>
+            <button class="quick-action" onclick="clearForm()">🗑️ Clear</button>
+        </div>
+        
+        <form id="captureForm" onsubmit="capture(event)">
+            <div class="form-group">
+                <label for="type">Type</label>
+                <select id="type" required>
+                    <option value="conversation">Conversation</option>
+                    <option value="note">Note</option>
+                    <option value="idea">Idea</option>
+                    <option value="code">Code</option>
+                    <option value="web">Web Clipping</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="title">Title *</label>
+                <input type="text" id="title" required placeholder="e.g., Discussion about Second Brain architecture">
+            </div>
+            
+            <div class="row">
+                <div class="col form-group">
+                    <label for="tags">Tags (comma-separated)</label>
+                    <input type="text" id="tags" placeholder="e.g., second-brain, architecture, ai">
+                </div>
+                <div class="col form-group">
+                    <label for="entities">Entities (comma-separated)</label>
+                    <input type="text" id="entities" placeholder="e.g., Ritik, SharpSites, GitHub">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="sourceUrl">Source URL (optional)</label>
+                <input type="text" id="sourceUrl" placeholder="https://...">
+            </div>
+            
+            <div class="form-group">
+                <label for="content">Content *</label>
+                <textarea id="content" required placeholder="Paste your conversation, note, or idea here..."></textarea>
+            </div>
+            
+            <button type="submit" id="submitBtn">🚀 Capture to Second Brain</button>
+        </form>
+        
+        <div id="status" class="status"></div>
+    </div>
+    
+    <script>
+        const BRAIN_API = 'https://your-worker-subdomain.workers.dev/capture';
+        const API_KEY = 'YOUR_API_KEY';
+        
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    status.style.display = 'none';
+                }, 5000);
+            }
+        }
+        
+        async function capture(event) {
+            event.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ Capturing...';
+            
+            showStatus('Capturing to Second Brain...', 'loading');
+            
+            const data = {
+                type: document.getElementById('type').value,
+                title: document.getElementById('title').value,
+                content: document.getElementById('content').value,
+                tags: document.getElementById('tags').value.split(',').map(t => t.trim()).filter(t => t),
+                entities: document.getElementById('entities').value.split(',').map(e => e.trim()).filter(e => e),
+                source_url: document.getElementById('sourceUrl').value || undefined
+            };
+            
+            try {
+                const response = await fetch(BRAIN_API, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showStatus(`✓ Captured successfully! Path: ${result.path}`, 'success');
+                    
+                    // Clear form on success
+                    document.getElementById('title').value = '';
+                    document.getElementById('content').value = '';
+                    document.getElementById('tags').value = '';
+                    document.getElementById('entities').value = '';
+                    document.getElementById('sourceUrl').value = '';
+                } else {
+                    showStatus(`✗ Failed: ${result.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`✗ Error: ${error.message}`, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🚀 Capture to Second Brain';
+            }
+        }
+        
+        function fillTemplate(type) {
+            const typeSelect = document.getElementById('type');
+            const titleInput = document.getElementById('title');
+            const contentTextarea = document.getElementById('content');
+            const tagsInput = document.getElementById('tags');
+            
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0];
+            
+            switch(type) {
+                case 'conversation':
+                    typeSelect.value = 'conversation';
+                    titleInput.value = `Conversation - ${dateStr}`;
+                    contentTextarea.value = `## Context
+[What led to this conversation?]
+
+## Discussion
+[Main points discussed]
+
+## Key Decisions
+- [Decision 1]
+- [Decision 2]
+
+## Next Steps
+- [Action item 1]
+- [Action item 2]`;
+                    tagsInput.value = 'conversation';
+                    break;
+                    
+                case 'note':
+                    typeSelect.value = 'note';
+                    titleInput.value = `Note - ${dateStr}`;
+                    contentTextarea.value = `## Topic
+[What is this note about?]
+
+## Key Points
+- [Point 1]
+- [Point 2]
+- [Point 3]
+
+## References
+- [Any links or references]`;
+                    tagsInput.value = 'note';
+                    break;
+                    
+                case 'idea':
+                    typeSelect.value = 'idea';
+                    titleInput.value = `Idea - ${dateStr}`;
+                    contentTextarea.value = `## Problem
+[What problem does this solve?]
+
+## Solution
+[Describe your idea]
+
+## Benefits
+- [Benefit 1]
+- [Benefit 2]
+
+## Challenges
+- [Potential challenge 1]
+- [Potential challenge 2]`;
+                    tagsInput.value = 'idea';
+                    break;
+            }
+        }
+        
+        function clearForm() {
+            document.getElementById('title').value = '';
+            document.getElementById('content').value = '';
+            document.getElementById('tags').value = '';
+            document.getElementById('entities').value = '';
+            document.getElementById('sourceUrl').value = '';
+            document.getElementById('type').value = 'conversation';
+        }
+        
+        // Auto-fill source URL if coming from a link
+        window.addEventListener('load', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sourceUrl = urlParams.get('url');
+            const title = urlParams.get('title');
+            
+            if (sourceUrl) {
+                document.getElementById('sourceUrl').value = sourceUrl;
+            }
+            if (title) {
+                document.getElementById('title').value = title;
+            }
+        });
+    </script>
+</body>
+</html>

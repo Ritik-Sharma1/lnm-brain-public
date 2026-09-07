@@ -1,0 +1,40 @@
+{
+  "name": "Lnm-Brain Dev Container",
+  "image": "mcr.microsoft.com/devcontainers/python:3.9",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "github.copilot",
+        "github.copilot-chat",
+        "eamodio.gitlens",
+        "yzhang.markdown-all-in-one",
+        "pkief.material-icon-theme"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "files.autoSave": "afterDelay",
+        "files.autoSaveDelay": 1000,
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.formatting.provider": "black",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true
+      }
+    }
+  },
+  "portsAttributes": {
+    "8787": {
+      "label": "Cloudflare Worker",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "pip install -r requirements.txt && npm install -g wrangler",
+  "remoteUser": "vscode"
+}

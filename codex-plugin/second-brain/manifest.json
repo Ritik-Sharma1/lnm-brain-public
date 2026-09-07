@@ -1,0 +1,87 @@
+{
+  "manifestVersion": 1,
+  "name": "second-brain",
+  "version": "1.1.0",
+  "description": "Reusable Second Brain transport and behavior reference for an independently deployed LNM Brain.",
+  "homepage": "https://github.com/your-username/your-repo/tree/main/codex-plugin/second-brain",
+  "repository": "https://github.com/your-username/your-repo",
+  "license": "UNLICENSED",
+  "keywords": ["second-brain", "codex", "mcp", "knowledge-base", "retrieval", "ingest"],
+  "actualCodexPluginManifest": "./.codex-plugin/plugin.json",
+  "autoLayer": {
+    "mcpServerProvisioning": "external-global",
+    "strategy": ["SessionStart hook", "UserPromptSubmit hook", "PostToolUse hook", "second-brain-auto skill"],
+    "notes": [
+      "The bundle does not re-register the MCP server to avoid duplicate tool connections.",
+      "Register the user's own MCP deployment once globally in Codex and use this bundle only for behavior orchestration."
+    ]
+  },
+  "interface": {
+    "displayName": "Second Brain",
+    "shortDescription": "Global Codex memory backed by an LNM Brain deployment.",
+    "longDescription": "Queries the current user's Second Brain before meaningful work, injects relevant context, and ingests durable completed work back into that user's private memory system.",
+    "developerName": "LNM Brain Contributors",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write", "Context Injection", "Knowledge Capture"],
+    "websiteURL": "https://your-worker-subdomain.workers.dev",
+    "defaultPrompt": [
+      "Query my Second Brain before meaningful work that depends on prior context.",
+      "Ingest durable outcomes back into memory.",
+      "Use compressed wiki pages as primary historical context."
+    ],
+    "brandColor": "#0F766E"
+  },
+  "scope": {"installation": "global", "availability": "all-projects"},
+  "transport": {
+    "preferred": "mcp",
+    "mcpUrl": "https://your-worker-subdomain.workers.dev/mcp?key=YOUR_API_KEY",
+    "restBaseUrl": "https://your-worker-subdomain.workers.dev"
+  },
+  "auth": {
+    "type": "header",
+    "header": "x-api-key",
+    "value": "YOUR_API_KEY",
+    "queryFallback": {"name": "key", "value": "YOUR_API_KEY"}
+  },
+  "automation": {
+    "beforeEveryTask": {
+      "action": "query",
+      "description": "Look up relevant prior context before meaningful work.",
+      "http": {"method": "GET", "urlTemplate": "https://your-worker-subdomain.workers.dev/query?q={topic}&key=YOUR_API_KEY"},
+      "injectResultAs": "context",
+      "resultPriority": "primary"
+    },
+    "afterEveryTask": {
+      "action": "ingest",
+      "description": "Persist durable outcomes after meaningful work.",
+      "http": {
+        "method": "POST",
+        "url": "https://your-worker-subdomain.workers.dev/ingest",
+        "headers": {"x-api-key": "YOUR_API_KEY", "content-type": "application/json"}
+      },
+      "bodyTemplate": {
+        "title": "{title}",
+        "content": "{content}",
+        "type": "conversation",
+        "tags": "{tags}",
+        "entities": "{entities}"
+      }
+    }
+  },
+  "actions": [
+    {"name": "query", "method": "GET", "path": "/query", "query": {"q": "{topic}", "key": "YOUR_API_KEY"}, "injectResultAs": "context"},
+    {"name": "semantic_search", "method": "POST", "path": "/search", "headers": {"x-api-key": "YOUR_API_KEY", "content-type": "application/json"}, "body": "{payload}"},
+    {"name": "capture", "method": "POST", "path": "/capture", "headers": {"x-api-key": "YOUR_API_KEY", "content-type": "application/json"}, "body": "{payload}"},
+    {"name": "ingest", "method": "POST", "path": "/ingest", "headers": {"x-api-key": "YOUR_API_KEY", "content-type": "application/json"}, "body": {"title": "{title}", "content": "{content}", "type": "conversation", "tags": "{tags}", "entities": "{entities}"}},
+    {"name": "lint", "method": "POST", "path": "/lint", "headers": {"x-api-key": "YOUR_API_KEY", "content-type": "application/json"}, "body": "{payload}"},
+    {"name": "read_file", "method": "GET", "path": "/file", "query": {"path": "{path}", "key": "YOUR_API_KEY"}},
+    {"name": "get_graph", "method": "GET", "path": "/graph", "headers": {"x-api-key": "YOUR_API_KEY"}},
+    {"name": "write_file", "method": "POST", "path": "/write", "headers": {"x-api-key": "YOUR_API_KEY", "content-type": "application/json"}, "body": "{payload}"}
+  ],
+  "systemPrompt": [
+    "Use the current user's independently deployed Second Brain, never another person's example data.",
+    "Prefer MCP when available; REST is fallback transport.",
+    "Capture durable outcomes and avoid trivial tool noise.",
+    "Never commit live API keys or personal captured memory into this public template."
+  ]
+}

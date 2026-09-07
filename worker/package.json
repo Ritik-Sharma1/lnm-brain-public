@@ -1,0 +1,17 @@
+{
+  "name": "lnm-brain",
+  "version": "10.2.2",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "dependencies": {
+    "@cloudflare/agents": "^0.0.16",
+    "@modelcontextprotocol/sdk": "^1.10.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

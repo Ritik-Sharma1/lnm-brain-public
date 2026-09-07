@@ -1,0 +1,48 @@
+name = "lnm-brain"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+GITHUB_REPO = "your-username/your-repo"
+GITHUB_BRANCH = "main"
+
+# Cloudflare AI — free tier, used for semantic embeddings (BGE-small)
+[ai]
+binding = "AI"
+
+# Health-watch every 15 min (light, cloud-resident). Heavy work (compression,
+# backfill, consolidation, home-feed) is gated to specific hours inside handleCron.
+[triggers]
+crons = ["*/15 * * * *"]
+
+[observability]
+enabled = true
+
+# KV — entity facts, confidence scores, neuron budget tracking
+# Create your own: `wrangler kv namespace create VECTORS`, then paste the id below.
+[[kv_namespaces]]
+binding = "VECTORS"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Vectorize — LEGACY semantic index (BGE-small-en, 384-dim). Kept live during
+# migration; reads fall back here until m3 backfill completes, then retired.
+[[vectorize]]
+binding = "VECTORIZE_OLD"
+index_name = "lnm-brain-vectors"
+
+# Vectorize — PRIMARY semantic index (BGE-M3, 1024-dim). Stronger concept/synonym
+# bridging for related concepts. Primary read+write target.
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "lnm-brain-m3"
+
+# v9: D1 keyword index (FTS5). Optional — worker degrades gracefully if absent.
+# Setup once:
+#   wrangler d1 create lnm-brain-fts
+# Then paste the printed database_id below and `wrangler deploy`. Schema is
+# auto-created on first ingest (CREATE VIRTUAL TABLE IF NOT EXISTS).
+[[d1_databases]]
+binding = "DB"
+database_name = "lnm-brain-fts"
+database_id   = "REPLACE_WITH_YOUR_D1_DATABASE_ID"

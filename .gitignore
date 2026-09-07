@@ -1,0 +1,22 @@
+node_modules/
+.dev.vars
+dist/
+.tmp/
+.DS_Store
+
+# Wrangler local dev state
+worker/.wrangler/
+.wrangler/
+
+# If you use this repo to also host your captured knowledge locally,
+# keep your personal data out of version control here:
+raw/
+wiki/
+graph/graph.json
+portfolio/
+handoffs/
+meta/
+log.txt
+index.md
+overview.md
+.obsidian/
