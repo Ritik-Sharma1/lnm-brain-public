@@ -222,6 +222,15 @@ go: GitHub shows the token only once, and copying anything else replaces it on y
    `npx wrangler deploy` and try again. If it says `Authentication error`, redo Step 2
    (`npx wrangler login`, click **Allow**) first.
 
+   **Prefer the terminal command above.** If you use the Cloudflare dashboard instead
+   (**Workers & Pages** → your worker → **Settings** → **Variables and Secrets** → **Add**):
+   set **Type** to **Secret**, not **Text**, name it `GITHUB_TOKEN`, paste the value, then
+   click **Deploy**. With **Text**, Cloudflare shows the token in plain view, adds a yellow
+   *"Update your Wrangler configuration"* box that repeats it, and the next `npx wrangler deploy`
+   deletes it. If that happened: delete the variable, add it again as a **Secret**, never copy that
+   yellow box into `wrangler.toml` or any repo, and if the token appeared in a screenshot or a
+   chat, delete it on GitHub and make a new one.
+
 ## Step 8. Check that it works
 
 Replace `<worker-url>` with yours:
