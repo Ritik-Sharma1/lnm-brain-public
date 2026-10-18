@@ -451,14 +451,15 @@ function authenticate(req, env) {
   if (!keyConfigured(env.API_KEY)) return { ok: false, status: 503, error: "API_KEY not configured on this worker (missing, placeholder, or shorter than 16 characters). Set a random one: npx wrangler secret put API_KEY" };
   const url = new URL(req.url);
   const bearer = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  const key = req.headers.get("X-API-Key") || bearer || url.searchParams.get("key");
+  const key = (req.headers.get("X-API-Key") || bearer || url.searchParams.get("key") || "").trim();
   if (!key) return { ok: false, status: 401, error: "API key required" };
-  if (!safeEqual(key, env.API_KEY)) return { ok: false, status: 401, error: "Invalid API key" };
+  // trim(): a secret piped in from a file often carries a trailing newline.
+  if (!safeEqual(key, env.API_KEY.trim())) return { ok: false, status: 401, error: "Invalid API key" };
   return { ok: true };
 }
 function adminOk(req, url, env) {
-  const k = req.headers.get("x-admin-key") || url.searchParams.get("key2");
-  return keyConfigured(env.ADMIN_KEY) && !!k && safeEqual(k, env.ADMIN_KEY);
+  const k = (req.headers.get("x-admin-key") || url.searchParams.get("key2") || "").trim();
+  return keyConfigured(env.ADMIN_KEY) && !!k && safeEqual(k, env.ADMIN_KEY.trim());
 }
 
 // ─── NVIDIA NIM caller ────────────────────────────────────────────────────────
@@ -5461,7 +5462,7 @@ export default {
       if (method==="GET") return new Response("Telegram webhook active",{status:200});
       if (method!=="POST") return jsonErr("Method not allowed", 405);
       const tgSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") || "";
-      if (!keyConfigured(env.TELEGRAM_WEBHOOK_SECRET) || !safeEqual(tgSecret, env.TELEGRAM_WEBHOOK_SECRET)) return jsonErr("Forbidden", 403);
+      if (!keyConfigured(env.TELEGRAM_WEBHOOK_SECRET) || !safeEqual(tgSecret, env.TELEGRAM_WEBHOOK_SECRET.trim())) return jsonErr("Forbidden", 403);
       try {
         const body=await request.json(), msg=body?.message?.text, chatId=body?.message?.chat?.id;
         if(!msg||!chatId) return new Response("OK",{status:200});

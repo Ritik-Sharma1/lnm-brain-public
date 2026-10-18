@@ -98,6 +98,9 @@ npx wrangler whoami
 ```
 
 `login` opens your browser; click **Allow**. `whoami` should print your account.
+If `whoami` says the token is read from the `CLOUDFLARE_API_TOKEN` environment variable, an
+older token from another project is overriding your login and may lack D1 or Vectorize
+access. Run `unset CLOUDFLARE_API_TOKEN` in this terminal, then `npx wrangler login` again.
 If it lists more than one account, copy the right **Account ID** and add this line near
 the top of `worker/wrangler.toml`:
 
@@ -154,8 +157,8 @@ The Vectorize index needs no id, but it must be **1024 dimensions, cosine**; tha
 changed later. Then create the D1 tables used by projects and the Hermes endpoints:
 
 ```bash
-npx wrangler d1 execute lnm-brain-fts --remote --file=../migrations/003_hermes.sql
-npx wrangler d1 execute lnm-brain-fts --remote --file=../migrations/004_projects.sql
+npx wrangler d1 execute lnm-brain-fts --remote --file=../migrations/003_hermes.sql -y
+npx wrangler d1 execute lnm-brain-fts --remote --file=../migrations/004_projects.sql -y
 ```
 
 ## Step 6. Deploy
@@ -181,7 +184,7 @@ to the worker:
 
 ```bash
 mkdir -p ~/.config/lnm-brain && chmod 700 ~/.config/lnm-brain
-openssl rand -hex 32 > ~/.config/lnm-brain/api-key && chmod 600 ~/.config/lnm-brain/api-key
+openssl rand -hex 32 | tr -d '\n' > ~/.config/lnm-brain/api-key && chmod 600 ~/.config/lnm-brain/api-key
 npx wrangler secret put API_KEY < ~/.config/lnm-brain/api-key
 ```
 
@@ -335,7 +338,7 @@ Plain settings (not secrets) live in `wrangler.toml` under `[vars]`: `GITHUB_REP
 ## Rotate your API key
 
 ```bash
-openssl rand -hex 32 > ~/.config/lnm-brain/api-key
+openssl rand -hex 32 | tr -d '\n' > ~/.config/lnm-brain/api-key
 npx wrangler secret put API_KEY < ~/.config/lnm-brain/api-key
 ```
 
@@ -350,6 +353,7 @@ connector (Step 10), and re-run Step 11 with the new key.
 | `503 … API_KEY not configured` | Step 7 isn't done, or the key is shorter than 16 characters or a placeholder like `YOUR_API_KEY`. |
 | `401 Invalid API key` / `API key required` | The key you sent doesn't match. Check the `X-API-Key` header or the `?key=` part of the URL. |
 | `wrangler deploy` fails with `ETIMEDOUT` | Some networks block Node from reaching api.cloudflare.com. Try another network, or deploy with curl: set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, then run `node scripts/deploy-via-curl.js`. |
+| `Authentication error [code: 10000]` while creating D1 or Vectorize | A `CLOUDFLARE_API_TOKEN` in your shell overrides `wrangler login` and lacks those permissions. Run `unset CLOUDFLARE_API_TOKEN`, then `npx wrangler login` (Step 2). |
 | `REPLACE_WITH_YOUR_…` / binding errors on deploy | Paste the KV `id` and D1 `database_id` from Step 5 into `wrangler.toml`. |
 | `github_ping` shows `401` or `404` in Step 8 | Wrong `GITHUB_REPO`, or the token lacks **Contents: Read and write** on that repo. Fix and run `npx wrangler secret put GITHUB_TOKEN` again. |
 | Vectorize `dimension mismatch` errors | The index wasn't created with `--dimensions=1024 --metric=cosine`. Run `npx wrangler vectorize delete lnm-brain-m3`, create it again, then redeploy. |

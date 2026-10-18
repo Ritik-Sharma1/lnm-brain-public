@@ -77,6 +77,10 @@ await t("strong key via Authorization: Bearer → tools/list", async () => {
   const r = await mcp(env({ API_KEY: STRONG }), { Authorization: "Bearer " + STRONG });
   assert.equal(r.status, 200);
 });
+await t("secret with a trailing newline (piped from a file) still matches", async () => {
+  const r = await mcp(env({ API_KEY: STRONG + "\n" }), { "X-API-Key": STRONG });
+  assert.equal(r.status, 200);
+});
 await t("MCP SSE GET requires the key", async () => {
   const r = await call(env({ API_KEY: STRONG }), "/mcp");
   assert.equal(r.status, 401);
