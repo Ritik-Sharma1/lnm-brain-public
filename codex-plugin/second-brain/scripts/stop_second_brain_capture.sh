@@ -101,7 +101,8 @@ payload = json.dumps({
 base = os.environ["BRAIN_BASE_URL"].rstrip("/")
 for endpoint, timeout in (("/ingest", 60), ("/capture", 30)):
     req = urllib.request.Request(base + endpoint, data=payload, method="POST",
-        headers={"X-API-Key": os.environ["BRAIN_API_KEY"], "Content-Type": "application/json"})
+        # Custom User-Agent: Cloudflare answers the default "Python-urllib" one with 403 (error 1010).
+        headers={"X-API-Key": os.environ["BRAIN_API_KEY"], "Content-Type": "application/json", "User-Agent": "lnm-brain-hook"})
     try:
         urllib.request.urlopen(req, timeout=timeout).read()
         state.write_text(str(len(exchanges)))

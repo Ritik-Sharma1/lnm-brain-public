@@ -18,7 +18,7 @@ print(f"Reconciler drain {'(DRY RUN) ' if DRY else ''}starting...")
 
 while True:
     body = json.dumps({"cursor": cursor, "batch": 40, "dry_run": DRY}).encode()
-    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json", "User-Agent": "lnm-brain-script"})
     try:
         r = json.load(urllib.request.urlopen(req, timeout=90))
     except Exception as e:

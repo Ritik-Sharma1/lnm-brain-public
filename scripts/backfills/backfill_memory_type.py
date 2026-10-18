@@ -24,7 +24,7 @@ CLASSIFY_ENDPOINT = f"{BRAIN_BASE}/api/classify-memory-type"
 def post_json(url, payload, timeout=45):
     body = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=body, method="POST",
-                                  headers={"content-type": "application/json"})
+                                  headers={"content-type": "application/json", "user-agent": "lnm-brain-script"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode())
 
