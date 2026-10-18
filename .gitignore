@@ -20,3 +20,4 @@ log.txt
 index.md
 overview.md
 .obsidian/
+__pycache__/

@@ -7,7 +7,20 @@ import { isPinnedFact, capFactIndexWithPins, inferBehavioralPatterns, buildVoice
 import { countTriplesFromKeys, isUncompressedCandidate, classifyRawFile, isToolNoiseName, rankEntitiesByCentrality } from "./triple-stats.js";
 
 /**
- * Lnm-Brain Cloudflare Worker — v10.2.2
+ * Lnm-Brain Cloudflare Worker — v10.2.3
+ *
+ * v10.2.3 (Public-template security): auth now FAILS CLOSED. With API_KEY unset,
+ *   placeholder ("YOUR_API_KEY", "<...>") or shorter than 16 chars, every protected
+ *   route returns 503 — the old template accepted the public string "YOUR_API_KEY".
+ *   /mcp, /api/*, /file, /graph-internal and /query-triples moved behind the key
+ *   (they were reachable without it). Key accepted as X-API-Key, Authorization:
+ *   Bearer, or ?key= (Claude connector URL); constant-time compare. /health stays
+ *   public (deep=1 needs the key) and reports auth configured/not-configured.
+ *   /admin/embed-dims needs ADMIN_KEY. /.well-known/* → 404 so MCP clients skip
+ *   OAuth discovery. /telegram is off unless TELEGRAM_TOKEN is set, requires
+ *   TELEGRAM_WEBHOOK_SECRET and only stores notes from TELEGRAM_CHAT_ID. The `/`
+ *   graph viewer asks for the key in the browser. Legacy VECTORIZE_OLD binding
+ *   removed (no code read it).
  *
  * v10.2.2 (Correction + latency): NEW 27th MCP tool `forget` — the brain's
  *   missing write-correction primitive. Modes: fact (retract one entity fact),
@@ -156,6 +169,8 @@ import { countTriplesFromKeys, isUncompressedCandidate, classifyRawFile, isToolN
  *   triple:{subject_slug}:{pred_slug} → {subject, predicate, object, category, confidence, last_confirmed}
  *   triple:{subject_slug}:index     → JSON string[] of predicate slugs for this subject
  */
+
+const VERSION = "10.2.3";
 
 // ─── Model config ─────────────────────────────────────────────────────────────
 // NVIDIA NIM endpoint
@@ -419,13 +434,32 @@ function checkRateLimit(ip) {
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
+// Fail closed: with no API_KEY, or a short/placeholder one, every protected route
+// refuses (503). Earlier templates fell back to the public string "YOUR_API_KEY".
+const MIN_KEY_LENGTH = 16;
+const PLACEHOLDER_KEY_RE = /^(<.*>|your[_-]?api[_-]?key|api[_-]?key|change[_-]?me|password|secret|test)$/i;
+function keyConfigured(k) {
+  return typeof k === "string" && k.trim().length >= MIN_KEY_LENGTH && !PLACEHOLDER_KEY_RE.test(k.trim());
+}
+function safeEqual(a, b) {
+  const x = new TextEncoder().encode(String(a)), y = new TextEncoder().encode(String(b));
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] | 0) ^ (y[i] | 0);
+  return diff === 0;
+}
 function authenticate(req, env) {
+  if (!keyConfigured(env.API_KEY)) return { ok: false, status: 503, error: "API_KEY not configured on this worker (missing, placeholder, or shorter than 16 characters). Set a random one: npx wrangler secret put API_KEY" };
   const url = new URL(req.url);
-  const key = req.headers.get("X-API-Key") || req.headers.get("x-api-key") || url.searchParams.get("key");
-  const expected = env.API_KEY || "YOUR_API_KEY";
-  if (!key) return { ok: false, error: "API key required" };
-  if (key !== expected) return { ok: false, error: "Invalid API key" };
+  const bearer = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const key = (req.headers.get("X-API-Key") || bearer || url.searchParams.get("key") || "").trim();
+  if (!key) return { ok: false, status: 401, error: "API key required" };
+  // trim(): a secret piped in from a file often carries a trailing newline.
+  if (!safeEqual(key, env.API_KEY.trim())) return { ok: false, status: 401, error: "Invalid API key" };
   return { ok: true };
+}
+function adminOk(req, url, env) {
+  const k = (req.headers.get("x-admin-key") || url.searchParams.get("key2") || "").trim();
+  return keyConfigured(env.ADMIN_KEY) && !!k && safeEqual(k, env.ADMIN_KEY.trim());
 }
 
 // ─── NVIDIA NIM caller ────────────────────────────────────────────────────────
@@ -820,7 +854,7 @@ function factHash(fact) {
 }
 
 // ─── Entity name normalization (v5.1) ─────────────────────────────────────────
-// KV key: entity:aliases_index → JSON { "ritik": "Brain Owner", "exampleproject": "ExampleProject" }
+// KV key: entity:aliases_index → JSON { "jane": "Brain Owner", "exampleproject": "ExampleProject" }
 // On every extraction, short/variant names resolve to canonical before KV write.
 //
 // v5.1 KV cost fix: alias map cached in module-level var for the lifetime of a
@@ -1340,7 +1374,7 @@ Rules:
 - Only extract facts EXPLICITLY stated. No inferences.
 - Each fact: complete sentence "<Entity> <verb> <detail>". Min 10 chars.
 - Classify each fact as one of: "fact" (default), "preference" (likes/dislikes/prefers), "instruction" (rules/must/never/always), "history" (past event/decision).
-- Also extract triples: {predicate: "location", object: "Delhi"} for key attributes.
+- Also extract triples: {predicate: "location", object: "Berlin"} for key attributes.
 - Max 5 facts per entity, max 6 entities total.
 - Also classify this observation as one of: decision, bugfix, feature, discovery, conversation, note. Return as 'category' in your JSON output.
 - before_summary: max 60 tokens describing what immediately preceded this observation (context/problem/prior state). Empty string if unknown.
@@ -1363,7 +1397,7 @@ Return JSON only:
         {"text": "Never use mock databases in tests.", "category": "instruction"}
       ],
       "triples": [
-        {"predicate": "location", "object": "Delhi"},
+        {"predicate": "location", "object": "Berlin"},
         {"predicate": "role", "object": "founder"},
         {"predicate": "company", "object": "ExampleProject"}
       ]
@@ -1488,16 +1522,16 @@ async function extractAndStoreFactsFromContent(env, content, callerEntities = []
     }));
     triplesWritten = perEntityCounts.reduce((a, b) => a + b, 0);
 
-    // v10.2.1/.1: behavioral-inference pass. Brain Owner is the biggest node — study him
+    // v10.2.1/.1: behavioral-inference pass. Brain Owner is the biggest node — study them
     // across domains (build/design/writing/client/decision/habit). Fires whenever
-    // the content plausibly reflects HIM: any Brain Owner entity, OR his authored prose
+    // the content plausibly reflects THEM: any Brain Owner entity, OR their authored prose
     // (ads/copy/posts/chats) which often doesn't name "Brain Owner" literally. Stores
     // pinned "behavioral" facts AND writes a graph EDGE per pattern so recall can
     // TRAVEL the graph (cheap) instead of dumping many nodes. Budget-gated.
     try {
       const lc = String(content || "").toLowerCase();
-      const touchesOwner = entity_facts.some(ef => /ritik|example ?project|ExampleProject/i.test(ef.entity || "")) ||
-                           callerEntities.some(e => /ritik|example ?project/i.test(e)) ||
+      const touchesOwner = entity_facts.some(ef => /brain owner|example ?project/i.test(ef.entity || "")) ||
+                           callerEntities.some(e => /brain owner|example ?project/i.test(e)) ||
                            /\b(i built|i wrote|i prefer|i like|i designed|write an ad|advertisement|ad copy|my style|ExampleProject|Example Project)\b/.test(lc);
       if (touchesOwner) {
         const patterns = await inferBehavioralPatterns(
@@ -5005,7 +5039,7 @@ async function runMCPTool(name, args, env, ctx) {
 async function handleMCPPost(req, env, ctx) {
   try {
     const { id, method, params } = await req.json();
-    if (method==="initialize") return jrpcOk(id, { protocolVersion:"2024-11-05", capabilities:{ tools:{} }, serverInfo:{ name:"lnm-brain-mcp", version:"10.2.2", icon:"https://your-worker-subdomain.workers.dev/favicon.ico" } });
+    if (method==="initialize") return jrpcOk(id, { protocolVersion:"2024-11-05", capabilities:{ tools:{} }, serverInfo:{ name:"lnm-brain-mcp", version:VERSION, icon:new URL("/favicon.ico", req.url).href } });
     if (method==="tools/list")  return jrpcOk(id, { tools:MCP_TOOLS });
     if (method==="tools/call")  return jrpcOk(id, await runMCPTool(params.name, params.arguments||{}, env, ctx));
     return new Response(JSON.stringify(jrpcErr(id,-32601,`Method not found: ${method}`)), { headers:jsonHeaders() });
@@ -5016,7 +5050,7 @@ async function handleMCPGet(req, env) {
   const stream = new ReadableStream({
     start(c) {
       const enc = d => new TextEncoder().encode(`data: ${JSON.stringify(d)}\n\n`);
-      c.enqueue(enc({ type:"connected", service:"lnm-brain-mcp", version:"10.2.2", tools:MCP_TOOLS.map(t=>t.name) }));
+      c.enqueue(enc({ type:"connected", service:"lnm-brain-mcp", version:VERSION, tools:MCP_TOOLS.map(t=>t.name) }));
       const iv = setInterval(()=>c.enqueue(enc({type:"ping",ts:Date.now()})), 30000);
       req.signal.addEventListener("abort", ()=>clearInterval(iv));
     },
@@ -5027,7 +5061,7 @@ async function handleMCPGet(req, env) {
 // ═══ Hermes Agent memory endpoints (v9.9.0) ════════════════════════════════
 function buildHermesSystemBlock(facts){
   const prefs=(Array.isArray(facts)?facts:[]).filter(f=>['preference','instruction'].includes(f.category)).slice(0,7).map(f=>'- '+(f.content||f.fact)).join('\n');
-  return prefs?('RITIK PREFERENCES:\n'+prefs).slice(0,600):'';
+  return prefs?('OWNER PREFERENCES:\n'+prefs).slice(0,600):'';
 }
 function assembleHermesContext({handoff,memories,query,voice}){
   const parts=[];
@@ -5261,6 +5295,9 @@ export default {
       return new Response(ICON_SVG, { headers: { "Content-Type":"image/svg+xml", "Cache-Control":"public, max-age=86400" } });
     }
 
+    // No OAuth on this worker: a clean 404 tells MCP clients to use the key in the URL/header.
+    if (path.startsWith("/.well-known/")) return jsonErr("Not found", 404);
+
     if (path==="/health"&&method==="GET") {
       const kvWrites = await getKVWriteCount(env);
       const neurons  = await getNeuronUsage(env);
@@ -5268,6 +5305,8 @@ export default {
       // Deep diag (cheap probes). Pass ?deep=1 to include.
       let deep = undefined;
       if (url.searchParams.get("deep") === "1") {
+        const auth = authenticate(request, env);
+        if (!auth.ok) return jsonErr(auth.error, auth.status);
         const t0 = Date.now();
         const kvPing = await env.VECTORS.get("obs:latest_session").then(() => Date.now() - t0).catch(() => -1);
         const t1 = Date.now();
@@ -5277,7 +5316,7 @@ export default {
         const handoffRaw = await env.VECTORS.get("state:session-handoff:latest").catch(() => null);
         deep = { kv_ping_ms: kvPing, github_ping: ghPing, sessions_tracked: sessionsCount, latest_handoff_present: !!handoffRaw, home_feed_present: !!(await env.VECTORS.get("state:home-feed:v1").catch(()=>null)) };
       }
-      return jsonOk({ status:"ok", service:"lnm-brain", version:"10.2.2", embedding_model: EMBEDDING_MODEL, embedding_dims: EMBEDDING_DIMS, timestamp:new Date().toISOString(), timestamp_ist: istIsoStr(),
+      return jsonOk({ status:"ok", service:"lnm-brain", version:VERSION, embedding_model: EMBEDDING_MODEL, embedding_dims: EMBEDDING_DIMS, auth: keyConfigured(env.API_KEY) ? "configured" : "not-configured", timestamp:new Date().toISOString(), timestamp_ist: istIsoStr(),
         kv_writes_today: kvWrites, kv_write_limit: 1000000, kv_status: kvStatus,
         neurons_today: neurons, neuron_limit: 7000,
         features:["entity-normalization","contradiction-detection","backfill-facts","/ask-endpoint","confidence-scoring","recency-weighting","fact-consolidation","semantic-search","karpathy-wiki","nvidia-7tier-llm","27x-token-savings","kv-cost-fix","batched-writes","structured-triples","memory-categories","semantic-reranking","instruction-priority","temporal-context","memory-decay","hybrid-keyword-semantic-fusion","triple-contradiction-detection","triples-in-query-results","semantic-search-reranking","observation-category-typing","before-after-causal-context","progressive-disclosure","session-start-summary","async-capture-waituntil","domain-routing-index","domain-classification","backfill-domains","ask-uses-routing-index","citation-endpoint","anchor-entity-graph-traversal","force-reinforce","write-entity-triples","monthly-session-index","kv-write-budget-guard","paid-tier-kv-limits","1-hop-graph-traversal","auto-monthly-index","llm-reranking","ist-session-buckets","surface-first-class","session-handoff-supersede","list-recent","get-latest-handoff","get-handoffs","home-feed-snapshot","surface-scoped-routing","deep-health-probe","list-recent-filters",
@@ -5291,10 +5330,13 @@ export default {
         "bge-m3-1024dim-embeddings","query-expansion","full-content-chunk-embedding","vector-dominant-fusion","caller-supplied-wiki-body","reembed-migration",
         // v10.2.2
         "forget-write-correction","chunked-parallel-obs-reads","27-mcp-tools",
+        // v10.2.3
+        "fail-closed-auth","telegram-webhook-secret",
       ], deep });
     }
     // v9.2: embedding dim probe — confirms active model output dimensions.
     if (path==="/admin/embed-dims"&&method==="GET") {
+      if (!adminOk(request, url, env)) return jsonErr("admin key required", 403);
       try {
         const er = await env.AI.run(EMBEDDING_MODEL, { text: ["dimension probe"] });
         return jsonOk({ model: EMBEDDING_MODEL, dims: (er.data?.[0]||[]).length, expected: EMBEDDING_DIMS });
@@ -5305,8 +5347,7 @@ export default {
     // gates. job=home-feed rebuilds the snapshot incl. top_entities (§C);
     // job=nightly-consolidation runs cluster+distill (§B). Admin-key gated.
     if (path==="/admin/run-job"&&method==="POST") {
-      const adminKey = request.headers.get("x-admin-key") || url.searchParams.get("key2");
-      if (!env.ADMIN_KEY || adminKey !== env.ADMIN_KEY) return jsonErr("admin key required", 403);
+      if (!adminOk(request, url, env)) return jsonErr("admin key required", 403);
       const job = url.searchParams.get("job") || "";
       if (job === "home-feed") {
         const recRaw = await env.VECTORS.get("obs:recent");
@@ -5370,8 +5411,7 @@ export default {
     // global obs:recent + sessions buckets. Idempotent (upsert). Call repeatedly
     // with ?cursor=N until {done:true}. Header x-admin-key required.
     if (path==="/admin/reembed-m3"&&method==="POST") {
-      const adminKey = request.headers.get("x-admin-key") || url.searchParams.get("key2");
-      if (!env.ADMIN_KEY || adminKey !== env.ADMIN_KEY) return jsonErr("admin key required", 403);
+      if (!adminOk(request, url, env)) return jsonErr("admin key required", 403);
       const cursor = parseInt(url.searchParams.get("cursor") || "0", 10);
       const batch  = Math.max(1, Math.min(40, parseInt(url.searchParams.get("batch") || "15", 10)));
       // Build full id list once (cached in KV for the migration run).
@@ -5411,6 +5451,48 @@ export default {
       if (done) await env.VECTORS.delete("migrate:m3:idlist").catch(()=>{});
       return jsonOk({ total: allIds.length, cursor, batch: slice.length, embedded, skipped, next_cursor: done ? null : next, done });
     }
+
+    // Public HTML shells: they hold no data and ask for the key in the browser.
+    if (path==="/"&&method==="GET") return handleBrowserView();
+    // Telegram capture (optional). Off unless TELEGRAM_TOKEN is set. Telegram must send
+    // the secret registered with setWebhook(secret_token=TELEGRAM_WEBHOOK_SECRET), and only
+    // TELEGRAM_CHAT_ID may write: bots are public, anyone can message them.
+    if (path==="/telegram") {
+      if (!env.TELEGRAM_TOKEN) return jsonErr("Not found", 404);
+      if (method==="GET") return new Response("Telegram webhook active",{status:200});
+      if (method!=="POST") return jsonErr("Method not allowed", 405);
+      const tgSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") || "";
+      if (!keyConfigured(env.TELEGRAM_WEBHOOK_SECRET) || !safeEqual(tgSecret, env.TELEGRAM_WEBHOOK_SECRET.trim())) return jsonErr("Forbidden", 403);
+      try {
+        const body=await request.json(), msg=body?.message?.text, chatId=body?.message?.chat?.id;
+        if(!msg||!chatId) return new Response("OK",{status:200});
+        if(!env.TELEGRAM_CHAT_ID||String(chatId)!==String(env.TELEGRAM_CHAT_ID)){
+          if(!env.TELEGRAM_CHAT_ID) await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chat_id:chatId,text:`This bot is private. To let this chat save notes, set the worker secret TELEGRAM_CHAT_ID to ${chatId}.`})});
+          return new Response("OK",{status:200});
+        }
+        if(msg.startsWith("/")) {
+          if(env.TELEGRAM_TOKEN) await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chat_id:chatId,text:"Second Brain ready. Send your note."})});
+          return new Response("OK",{status:200});
+        }
+        const tagMatch=msg.match(/^#(\w+)\s*/), prefixTag=tagMatch?tagMatch[1].toLowerCase():null;
+        const raw=prefixTag?msg.slice(tagMatch[0].length).trim():msg.trim();
+        const optimized=await optimizeTelegramNote(env,raw);
+        const tags=["telegram","mobile-capture"]; if(prefixTag) tags.push(prefixTag);
+        const tsStr=new Date().toISOString().replace(/[-:]/g,"").slice(0,15);
+        await runIngestPipeline(env,ctx,{type:"note",title:`telegram-${tsStr}`,content:optimized,tags,entities:[],source_url:""});
+        if(env.TELEGRAM_TOKEN) await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chat_id:chatId,text:`Saved${prefixTag?` [#${prefixTag}]`:""}: ${optimized.substring(0,200)}${optimized.length>200?"…":""}`})});
+      } catch(e){ console.error("Telegram error:",e.message); }
+      return new Response("OK",{status:200});
+    }
+
+    // Public dashboard — page prompts for the key and sends it on every fetch,
+    // so the data endpoints below stay auth-protected.
+    if(path==='/ui' && method==='GET') return new Response(SECOND_BRAIN_UI_HTML,{headers:{'Content-Type':'text/html; charset=utf-8'}});
+
+    // Everything below reads or writes memory and needs the API key.
+    if(!checkRateLimit(ip)) return jsonErr("Too many requests",429);
+    { const auth=authenticate(request,env);
+      if(!auth.ok) return jsonErr(auth.error,auth.status); }
 
     if (path==="/api/session_start_summary"&&method==="GET") return handleSessionStartSummary(env);
     if (path==="/api/latest-handoff"&&method==="GET") {
@@ -5463,8 +5545,9 @@ export default {
     // POST /llm-benchmark { models: ["model/id", ...], key_secret: "SECRET_NAME", prompt: "..." }
     if (path==="/llm-benchmark"&&method==="POST") {
       const auth = authenticate(request, env);
-      if (!auth.ok) return jsonErr(auth.error, 401);
-      const { models = [], key_secret = "MISTRAL_LARGE_API_Key", prompt = "Summarize in 2 sentences: ExampleProject is a Delhi web design agency founded by Brain Owner targeting Indian local businesses." } = await request.json().catch(() => ({}));
+      if (!auth.ok) return jsonErr(auth.error, auth.status);
+      const { models = [], key_secret = "MISTRAL_LARGE_API_Key", prompt = "Summarize in 2 sentences: ExampleProject is a small web design studio founded by Brain Owner that builds sites for local businesses." } = await request.json().catch(() => ({}));
+      if (!LLM_TIERS.some(t => t.secretKey === key_secret)) return jsonErr("key_secret must name an NVIDIA LLM key secret", 400);
       const apiKey = env[key_secret];
       if (!apiKey) return jsonErr(`Secret ${key_secret} not found`, 400);
 
@@ -5485,8 +5568,9 @@ export default {
     // Raw response inspector — shows exact JSON response body from any NVIDIA model
     if (path==="/llm-raw"&&method==="POST") {
       const auth = authenticate(request, env);
-      if (!auth.ok) return jsonErr(auth.error, 401);
+      if (!auth.ok) return jsonErr(auth.error, auth.status);
       const { model = "openai/gpt-oss-120b", key_secret = "MISTRAL_LARGE_API_Key", prompt = "Say yes" } = await request.json().catch(() => ({}));
+      if (!LLM_TIERS.some(t => t.secretKey === key_secret)) return jsonErr("key_secret must name an NVIDIA LLM key secret", 400);
       const apiKey = env[key_secret];
       if (!apiKey) return jsonErr(`Secret ${key_secret} not found`, 400);
       const controller = new AbortController();
@@ -5510,7 +5594,7 @@ export default {
     // Debug endpoint — shows key presence and tests each tier until one succeeds
     if (path==="/llm-debug"&&method==="POST") {
       const auth = authenticate(request, env);
-      if (!auth.ok) return jsonErr(auth.error, 401);
+      if (!auth.ok) return jsonErr(auth.error, auth.status);
       const keysPresent = LLM_TIERS.map(t => ({ model: t.model, key: t.secretKey, present: !!env[t.secretKey] }));
       const tierResults = [];
       for (const tier of LLM_TIERS) {
@@ -5527,40 +5611,11 @@ export default {
       return jsonOk({ keys: keysPresent, tier_tests: tierResults });
     }
 
-    if (path==="/"&&method==="GET")              return handleBrowserView();
     if (path==="/graph-internal"&&method==="GET") return handleGraph(env);
     if (path==="/file"&&method==="GET")           return handleFile(url,env);
     if (path==="/query-triples"&&method==="GET")  return handleQueryTriples(url,env);
     if (path==="/mcp") { if(method==="GET") return handleMCPGet(request,env); if(method==="POST") return handleMCPPost(request,env,ctx); }
 
-    // Telegram
-    if (path==="/telegram"&&method==="GET") return new Response("Telegram webhook active",{status:200});
-    if (path==="/telegram"&&method==="POST") {
-      try {
-        const body=await request.json(), msg=body?.message?.text, chatId=body?.message?.chat?.id;
-        if(!msg||!chatId) return new Response("OK",{status:200});
-        if(msg.startsWith("/")) {
-          if(env.TELEGRAM_TOKEN) await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chat_id:chatId,text:"Second Brain ready. Send your note."})});
-          return new Response("OK",{status:200});
-        }
-        const tagMatch=msg.match(/^#(\w+)\s*/), prefixTag=tagMatch?tagMatch[1].toLowerCase():null;
-        const raw=prefixTag?msg.slice(tagMatch[0].length).trim():msg.trim();
-        const optimized=await optimizeTelegramNote(env,raw);
-        const tags=["telegram","mobile-capture"]; if(prefixTag) tags.push(prefixTag);
-        const tsStr=new Date().toISOString().replace(/[-:]/g,"").slice(0,15);
-        await runIngestPipeline(env,ctx,{type:"note",title:`telegram-${tsStr}`,content:optimized,tags,entities:[],source_url:""});
-        if(env.TELEGRAM_TOKEN) await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chat_id:chatId,text:`Saved${prefixTag?` [#${prefixTag}]`:""}: ${optimized.substring(0,200)}${optimized.length>200?"…":""}`})});
-      } catch(e){ console.error("Telegram error:",e.message); }
-      return new Response("OK",{status:200});
-    }
-
-    // Public dashboard — page prompts for the key and sends it on every fetch,
-    // so the data endpoints below stay auth-protected.
-    if(path==='/ui' && method==='GET') return new Response(SECOND_BRAIN_UI_HTML,{headers:{'Content-Type':'text/html; charset=utf-8'}});
-
-    if(!checkRateLimit(ip)) return jsonErr("Too many requests",429);
-    const auth=authenticate(request,env);
-    if(!auth.ok) return jsonErr(auth.error,401);
 
     if (path==="/ingest"          &&method==="POST") return handleIngest(request,env,ctx);
     if (path==="/lint"            &&method==="POST") return handleLint(request,env);
@@ -5966,8 +6021,8 @@ MCP tools: query_second_brain, get_entity_facts, ask_second_brain,
 // ─── Browser UI ───────────────────────────────────────────────────────────────
 function handleBrowserView() {
   const html = `<!DOCTYPE html>
-<html><head><title>Lnm-Brain v5</title>
-<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"><\/script>
+<html><head><title>LNM Brain graph</title>
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"><\/script>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f0f0f;color:white;overflow:hidden}
 #net{width:100vw;height:100vh}
@@ -6014,7 +6069,12 @@ function handleBrowserView() {
 <div id="net"></div>
 <script>
 let net,od;
-fetch('/graph-internal').then(r=>r.json()).then(d=>{
+// Key comes from #key=... (never sent to the server) or a prompt; kept for this tab only.
+function K(){let k=sessionStorage.getItem('sbk')||'';const h=new URLSearchParams(location.hash.slice(1)).get('key');
+  if(h){k=h;sessionStorage.setItem('sbk',h);history.replaceState(null,'',location.pathname);}
+  if(!k){k=(prompt('API key for this brain:')||'').trim();if(k)sessionStorage.setItem('sbk',k);}return k}
+function HK(){return {headers:{'X-API-Key':K()}}}
+fetch('/graph-internal',HK()).then(r=>{if(!r.ok){sessionStorage.removeItem('sbk');throw new Error('HTTP '+r.status+' (wrong or missing API key?) - reload to retry')}return r.json()}).then(d=>{
   document.getElementById('loading').style.display='none';
   od=d;document.getElementById('nc').textContent=d.nodes.length;document.getElementById('ec').textContent=d.edges.length;
   const nodes=new vis.DataSet(d.nodes.map(n=>({id:n.id,label:n.label,group:n.type,title:n.tags?n.tags.join(', '):'',value:n.connections?1+n.connections*.5:1})));
@@ -6034,7 +6094,7 @@ function showP(n){
   document.getElementById('pm').innerHTML='<span>Type: '+n.type+'</span>'+(n.tags&&n.tags.length?' · Tags: '+n.tags.join(', '):'');
   document.getElementById('pc').textContent='Loading...';
   document.getElementById('panel').style.display='block';
-  if(n.path)fetch('/file?path='+encodeURIComponent(n.path)).then(r=>r.text()).then(c=>document.getElementById('pc').textContent=c).catch(e=>document.getElementById('pc').textContent='Error: '+e.message);
+  if(n.path)fetch('/file?path='+encodeURIComponent(n.path),HK()).then(r=>r.text()).then(c=>document.getElementById('pc').textContent=c).catch(e=>document.getElementById('pc').textContent='Error: '+e.message);
   else document.getElementById('pc').textContent='No file.';
 }
 function closeP(){document.getElementById('panel').style.display='none'}

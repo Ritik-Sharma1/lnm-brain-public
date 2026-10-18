@@ -1,8 +1,10 @@
 name: Nightly LLM Recompress
 
+# Manual-only in the public template. To run nightly, set the BRAIN_API_KEY and GH_PAT
+# repository secrets, replace BRAIN_URL below with your worker URL, then re-enable the schedule.
 on:
-  schedule:
-    - cron: '0 2 * * *'   # 2 AM UTC (7:30 AM IST)
+  # schedule:
+  #   - cron: '0 2 * * *'   # 2 AM UTC
   workflow_dispatch:
     inputs:
       max_pages:

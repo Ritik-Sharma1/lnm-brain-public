@@ -1,11 +1,13 @@
 name: Deploy Worker to Cloudflare
 
+# Manual-only in the public template. To deploy on every push, add the CF_API_TOKEN and
+# CF_ACCOUNT_ID repository secrets and re-enable the push trigger.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'worker/src/**'
-      - 'worker/wrangler.toml'
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'worker/src/**'
+  #     - 'worker/wrangler.toml'
   workflow_dispatch:
 
 concurrency:

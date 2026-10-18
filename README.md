@@ -1,12 +1,14 @@
-# LNM Brain v10.2.2
+# LNM Brain v10.2.3
 
 **A self-hosted, persistent Second Brain for AI agents, coding assistants, and chat tools.**
 
 LNM Brain gives AI systems durable memory across sessions and platforms without forcing them to reread raw conversation history. It captures conversations and artifacts, compresses them into structured knowledge, extracts facts and graph relationships, indexes them across multiple retrieval systems, and exposes the result through REST + MCP.
 
-The current public architecture matches the production v10.2.2 worker used by Brain Owner's personal Second Brain, while intentionally excluding personal data, credentials, and private infrastructure identifiers.
+This public template is derived from the worker behind the author's own Second Brain, with personal data, credentials, and private infrastructure identifiers removed.
 
-> **Current release:** v10.2.2  
+**→ To install it, follow [INSTALL.md](INSTALL.md)** (or paste the one-prompt installer from it into Claude Code).
+
+> **Current release:** v10.2.3  
 > **Runtime:** Cloudflare Workers  
 > **Primary storage:** your own GitHub repository  
 > **Retrieval:** KV + D1 FTS5 + Vectorize + entity facts + triples + graph traversal  
@@ -28,7 +30,7 @@ LNM Brain addresses all four by maintaining an external, user-owned memory layer
 
 ---
 
-## v10.2.2 Architecture
+## Architecture
 
 ```text
 AI client / agent
@@ -178,13 +180,13 @@ A cold agent should be able to read the latest handoff and recover most of the w
 
 ## MCP
 
-Deploying the worker exposes an MCP endpoint similar to:
+Deploying the worker exposes an MCP endpoint at `<worker-url>/mcp`. Every call must carry your
+`API_KEY`: as an `X-API-Key` header (Claude Code, Claude app request headers), an
+`Authorization: Bearer` header, or, when a client can't send headers, as `?key=<your-API-key>`
+in the URL. A URL that contains the key is a password. Setup for each client is in
+[INSTALL.md](INSTALL.md#step-9-connect-claude-code).
 
-```text
-https://YOUR-WORKER.workers.dev/mcp?key=YOUR_API_KEY
-```
-
-The v10.2.2 worker exposes 27 MCP tools. Important categories include:
+The v10.2.3 worker exposes 27 MCP tools. Important categories include:
 
 - session/context retrieval;
 - entity facts and structured triples;
@@ -251,66 +253,30 @@ The worker is designed to degrade gracefully where possible—for example, falli
 
 ---
 
-## Installation Outline
+## Install
 
-### 1. Create a private data repository
+**New to terminals and GitHub?** Start with [INSTALL.md](INSTALL.md) anyway: every step is a
+copy-paste command or a click-by-click list, including the GitHub token
+([Step 7](INSTALL.md#step-7-give-the-brain-access-to-your-github-repo)). Or paste its one-prompt
+installer into Claude Code and let it do the typing.
 
-Use this public repository as the architecture/template, but store your actual personal memory in a **private** GitHub repository.
+Follow **[INSTALL.md](INSTALL.md)**. It covers prerequisites, the private data repo, the
+GitHub token, the Cloudflare resources, secrets, deploy, health checks, connecting Claude Code
+and the Claude app (web, desktop, phone), the auto-memory hooks, and troubleshooting. It also
+has a copy-paste prompt that lets Claude Code do the install for you.
 
-### 2. Configure the worker
+**Cost:** Cloudflare Workers Paid ($5/month) is recommended. The Free plan can run a small
+brain but hits its KV-write, Vectorize-storage and CPU limits as the brain grows; see
+[INSTALL.md → Cost](INSTALL.md#cost-free-vs-paid).
 
-```bash
-cd worker
-npm install
-```
+After installing, adapt `AGENTS.md` / `CLAUDE.md` so your agents:
 
-Create the required Cloudflare resources referenced by `wrangler.toml`, including KV, D1, and Vectorize as applicable.
-
-### 3. Configure repository variables
-
-Point the worker at the user's private GitHub data repository:
-
-```toml
-[vars]
-GITHUB_REPO = "YOUR_USERNAME/YOUR_PRIVATE_BRAIN_REPO"
-GITHUB_BRANCH = "main"
-```
-
-### 4. Store secrets securely
-
-Never commit credentials.
-
-```bash
-wrangler secret put BRAIN_API_KEY
-wrangler secret put GITHUB_TOKEN
-```
-
-Add any LLM/provider credentials required by the configured model tiers using Cloudflare secrets as well.
-
-### 5. Deploy
-
-```bash
-wrangler deploy
-```
-
-### 6. Verify health
-
-Check the worker's health endpoint and confirm the reported version is **10.2.2** before connecting agents.
-
-### 7. Connect an MCP-compatible agent
-
-Configure the deployed `/mcp` endpoint in Codex, Claude Code, OpenCode, or another MCP-capable client.
-
-### 8. Install agent behavior
-
-Adapt `AGENTS.md` / `CLAUDE.md` so the agent:
-
-- retrieves context before substantive work;
-- captures important work automatically;
-- creates rich session handoffs;
-- uses the cheapest retrieval path first;
-- never exposes secrets in committed files;
-- uses `forget`/supersession rather than destructive deletion for memory corrections.
+- retrieve context before substantive work;
+- capture important work automatically;
+- create rich session handoffs;
+- use the cheapest retrieval path first;
+- never expose secrets in committed files;
+- use `forget`/supersession rather than destructive deletion for memory corrections.
 
 ---
 
@@ -337,8 +303,11 @@ Treat `worker/package.json`, the worker source header, `/health`, `AGENTS.md`, a
 
 ## Security Model
 
-- Keep the user's memory/data repository private.
-- Keep `BRAIN_API_KEY`, GitHub tokens, model-provider keys, and Cloudflare credentials in secret stores only.
+- Auth fails closed: if the `API_KEY` secret is missing, a placeholder, or shorter than 16 characters, every memory route (including `/mcp`) answers `503` instead of opening up.
+- The API key grants full read/write access to the memory. Treat it, and any connector URL containing `?key=`, as a password.
+- Keep the user's memory/data repository private, and scope the GitHub token to that one repository (Contents: read and write).
+- Keep `API_KEY`, `ADMIN_KEY`, GitHub tokens, model-provider keys, and Cloudflare credentials in secret stores only (`wrangler secret put`).
+- Telegram capture is off unless configured, and only accepts the webhook secret and your own chat id.
 - Never copy another user's API keys or account identifiers from an example deployment.
 - Prefer soft retraction (`forget`) over hard deletion so corrections remain auditable.
 - Separate the public architecture repository from private captured memory.
@@ -374,7 +343,7 @@ The architecture should be cloned; the identity and data should not.
 
 ## Version
 
-**Current architecture: v10.2.2**
+**Current architecture: v10.2.3**
 
 Major line:
 
@@ -384,6 +353,7 @@ v10.0   projects + semantic clustering + centrality + triple provenance
 v10.1   entity-path navigation + latency improvements
 v10.2   durable self-model + behavioral inference + voice profile + correction
 v10.2.2 forget tool + chunked-parallel observation reads
+v10.2.3 fail-closed auth on every memory route + install guide
 ```
 
 ---

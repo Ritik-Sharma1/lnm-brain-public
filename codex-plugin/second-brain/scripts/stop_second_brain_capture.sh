@@ -1,184 +1,115 @@
 #!/usr/bin/env bash
-# Stop hook — full session summary capture, three-path strategy:
-#   1. /ingest API (full pipeline: wiki + observations + KV + vectors)
-#   2. /capture API fallback (same pipeline)
-#   3. GitHub API commit (raw file — triggers nightly recompress workflow)
-#   4. MCP instruction (last resort)
+# Stop / SessionEnd hook: saves a digest of the current Claude Code session to your LNM Brain.
+# Stop fires after EVERY reply, so captures are throttled to one per LNM_CAPTURE_EVERY
+# (default 6) new user messages; SessionEnd always saves whatever is new. The upload runs
+# in the background so Claude Code never waits on it. Failures go to
+# ~/.cache/lnm-brain/capture.log. Reads BRAIN_BASE_URL + BRAIN_API_KEY from
+# ~/.config/lnm-brain/config (written by scripts/setup-global-hooks.sh).
 set -uo pipefail
 
+CONFIG="${LNM_BRAIN_CONFIG:-$HOME/.config/lnm-brain/config}"
+[ -f "$CONFIG" ] && . "$CONFIG"
+[ -n "${BRAIN_API_KEY:-}" ] && [ -n "${BRAIN_BASE_URL:-}" ] || exit 0
+export BRAIN_API_KEY BRAIN_BASE_URL
+
+STATE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/lnm-brain"
+mkdir -p "$STATE_DIR"
 INPUT=$(cat)
 
-ACTIVE=$(printf '%s' "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null || echo "false")
-[ "$ACTIVE" = "true" ] && exit 0
+nohup python3 - "$INPUT" "$STATE_DIR" >>"$STATE_DIR/capture.log" 2>&1 <<'PYEOF' &
+import sys, json, os, re, datetime, urllib.request, urllib.error, pathlib
 
-TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // ""' 2>/dev/null || echo "")
-[ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ] && {
-  printf '[second-brain] MANDATORY: call ingest_to_second_brain NOW with key decisions, code, and insights. type=conversation.\n'
-  exit 0
-}
+inp = json.loads(sys.argv[1] or "{}")
+state_dir = pathlib.Path(sys.argv[2])
+if inp.get("stop_hook_active"):
+    sys.exit(0)
+path = inp.get("transcript_path") or ""
+if not os.path.isfile(path):
+    sys.exit(0)
+event = inp.get("hook_event_name") or "Stop"
+sid = re.sub(r"[^A-Za-z0-9_-]", "", str(inp.get("session_id") or "unknown"))[:64]
 
-API_KEY="YOUR_API_KEY"
-BASE_URL="https://your-worker-subdomain.workers.dev"
-GH_REPO="your-username/your-repo"
-GH_BRANCH="main"
-
-python3 - "$TRANSCRIPT" "$API_KEY" "$BASE_URL" "$GH_REPO" "$GH_BRANCH" <<'PYEOF'
-import sys, json, re, datetime, urllib.request, base64, os
-
-path, api_key, base_url, gh_repo, gh_branch = sys.argv[1:6]
-
-try:
-    lines = open(path).readlines()
-except Exception:
-    sys.exit(2)
-
-msgs = []
-for line in lines:
+SKIP_PREFIXES = ("<command-", "<local-command-", "<system-reminder>", "Caveat:")
+turns = []
+for line in open(path, encoding="utf-8", errors="replace"):
     try:
-        msgs.append(json.loads(line))
+        d = json.loads(line)
     except Exception:
-        pass
-
-# Extract ALL user + assistant messages for a rich session summary
-user_msgs = []
-assistant_msgs = []
-for msg in msgs:
-    role = msg.get("role", "")
-    c = msg.get("content", "")
-    text = ""
-    if isinstance(c, list):
-        text = " ".join(
-            b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text"
-        )
-    elif isinstance(c, str):
-        text = c
-    text = text.strip()
-    if not text or len(text) < 3:
         continue
+    if d.get("isSidechain") or d.get("isMeta"):
+        continue
+    m = d.get("message") if isinstance(d.get("message"), dict) else d
+    role = m.get("role") or d.get("type")
+    if role not in ("user", "assistant"):
+        continue
+    c = m.get("content", "")
+    if isinstance(c, list):
+        text = " ".join(b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text")
+    else:
+        text = c if isinstance(c, str) else ""
+    text = text.strip()
+    if len(text) < 3 or text.startswith(SKIP_PREFIXES):
+        continue
+    turns.append((role, text))
+
+exchanges = []
+for role, text in turns:
     if role == "user":
-        user_msgs.append(text)
-    elif role == "assistant":
-        assistant_msgs.append(text)
+        exchanges.append([text, ""])
+    elif exchanges:
+        exchanges[-1][1] = text
+if not exchanges:
+    sys.exit(0)
 
-if not user_msgs and not assistant_msgs:
-    sys.exit(2)
+state = state_dir / f"{sid}.count"
+try:
+    last = int(state.read_text())
+except Exception:
+    last = 0
+every = int(os.environ.get("LNM_CAPTURE_EVERY", "6"))
+new = len(exchanges) - last
+if new <= 0 or (event != "SessionEnd" and new < every):
+    sys.exit(0)
 
-first_user = user_msgs[0] if user_msgs else ""
-last_user  = user_msgs[-1] if user_msgs else ""
-last_asst  = assistant_msgs[-1] if assistant_msgs else ""
+picked = [exchanges[0]]
+middle = exchanges[1:-1]
+if middle:
+    step = max(1, len(middle) // 5)
+    picked += middle[::step][:5]
+if len(exchanges) > 1:
+    picked.append(exchanges[-1])
+content = "\n\n---\n\n".join(f"Q: {u[:400]}\nA: {a[:800]}" for u, a in picked)
 
-# Build full session summary: first exchange + middle digest + last exchange
-pairs = list(zip(user_msgs, assistant_msgs))
-key_exchanges = []
-# First exchange (topic/context)
-if pairs:
-    u, a = pairs[0]
-    key_exchanges.append(f"Q: {u[:400]}\nA: {a[:700]}")
-# Middle exchanges (up to 5, sampled)
-if len(pairs) > 2:
-    mid = pairs[1:-1]
-    step = max(1, len(mid) // 5)
-    for u, a in mid[::step][:5]:
-        key_exchanges.append(f"Q: {u[:300]}\nA: {a[:500]}")
-# Last exchange
-if len(pairs) > 1:
-    u, a = pairs[-1]
-    key_exchanges.append(f"Q: {u[:400]}\nA: {a[:800]}")
-
-session_content = "\n\n---\n\n".join(key_exchanges)
-
-# Derive title from first user message
-raw_slug = re.sub(r"[^a-z0-9-]+", "-", first_user[:60].lower()).strip("-") or "session"
-ts    = datetime.datetime.utcnow().strftime("%Y-%m-%d-%H%M")
-title = f"{ts}-{raw_slug}"
-
-# Extract entity hints
+first_user = exchanges[0][0]
+slug = re.sub(r"[^a-z0-9-]+", "-", first_user[:60].lower()).strip("-") or "session"
+now = datetime.datetime.now(datetime.timezone.utc)
+title = f"{now:%Y-%m-%d-%H%M}-{slug}"
 entities = []
-for word in re.findall(r'\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*\b', session_content):
+for word in re.findall(r"\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*\b", content):
     if word not in entities:
         entities.append(word)
-entities = entities[:10]
 
-tags = ["auto-captured", "stop-hook"]
-
-payload_dict = {
+payload = json.dumps({
     "title": title,
-    "content": session_content[:12000],
+    "content": content[:12000],
     "type": "conversation",
-    "tags": tags,
-    "entities": entities,
-}
-payload = json.dumps(payload_dict).encode()
+    "surface": "claude-code",
+    "tags": ["auto-captured", "claude-code", event.lower()],
+    "entities": entities[:10] + ["claude-code"],
+}).encode()
 
-# ── Path 1: /ingest API (full pipeline) ──────────────────────────────────────
-req = urllib.request.Request(
-    f"{base_url}/ingest", data=payload,
-    headers={"x-api-key": api_key, "Content-Type": "application/json"}, method="POST",
-)
-try:
-    urllib.request.urlopen(req, timeout=15)
-    print(f"[second-brain] Ingested via API: {title}")
-    sys.exit(0)
-except Exception:
-    pass
-
-# ── Path 1b: /capture fallback (same pipeline) ───────────────────────────────
-req2 = urllib.request.Request(
-    f"{base_url}/capture", data=payload,
-    headers={"x-api-key": api_key, "Content-Type": "application/json"}, method="POST",
-)
-try:
-    urllib.request.urlopen(req2, timeout=12)
-    print(f"[second-brain] Captured via API: {title}")
-    sys.exit(0)
-except Exception:
-    pass
-
-# ── Path 2: GitHub API commit (raw file + nightly recompress picks it up) ────
-gh_token = os.environ.get("GITHUB_TOKEN", "")
-if not gh_token:
+base = os.environ["BRAIN_BASE_URL"].rstrip("/")
+for endpoint, timeout in (("/ingest", 60), ("/capture", 30)):
+    req = urllib.request.Request(base + endpoint, data=payload, method="POST",
+        # Custom User-Agent: Cloudflare answers the default "Python-urllib" one with 403 (error 1010).
+        headers={"X-API-Key": os.environ["BRAIN_API_KEY"], "Content-Type": "application/json", "User-Agent": "lnm-brain-hook"})
     try:
-        import subprocess
-        result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, timeout=5)
-        gh_token = result.stdout.strip()
-    except Exception:
-        pass
-
-if gh_token:
-    file_path = f"raw/conversations/{ts}-{raw_slug}.md"
-    front = (
-        f"---\ntype: conversation\ncreated: {datetime.datetime.utcnow().strftime('%Y-%m-%d')}\n"
-        f"tags: [auto-captured, stop-hook, needs-compression]\n"
-        f"entities: [{', '.join(entities)}]\n---\n\n"
-    )
-    file_content = base64.b64encode((front + session_content[:10000]).encode()).decode()
-    gh_payload = json.dumps({
-        "message": f"capture: {title}",
-        "content": file_content,
-        "branch": gh_branch,
-    }).encode()
-    gh_req = urllib.request.Request(
-        f"https://api.github.com/repos/{gh_repo}/contents/{file_path}",
-        data=gh_payload,
-        headers={
-            "Authorization": f"token {gh_token}",
-            "Content-Type": "application/json",
-            "User-Agent": "lnm-brain-stop-hook",
-        },
-        method="PUT",
-    )
-    try:
-        urllib.request.urlopen(gh_req, timeout=12)
-        print(f"[second-brain] Captured via GitHub (raw): {title}")
+        urllib.request.urlopen(req, timeout=timeout).read()
+        state.write_text(str(len(exchanges)))
         sys.exit(0)
-    except Exception:
-        pass
-
-# ── Path 3: MCP fallback ──────────────────────────────────────────────────────
-sys.exit(3)
+    except urllib.error.HTTPError as e:
+        print(f"{now:%Y-%m-%dT%H:%M}Z {endpoint} HTTP {e.code}: {e.read()[:200]!r}")
+    except Exception as e:
+        print(f"{now:%Y-%m-%dT%H:%M}Z {endpoint} failed: {e}")
 PYEOF
-
-STATUS=$?
-if [ $STATUS -eq 3 ]; then
-  printf '[second-brain] MANDATORY: call ingest_to_second_brain NOW — summary of this session: key decisions, code written, problems solved, entities discussed. type=conversation.\n'
-fi
+exit 0

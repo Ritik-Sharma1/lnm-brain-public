@@ -1,63 +1,83 @@
 #!/usr/bin/env bash
-# Run ONCE from the Lnm-Brain repo root on any machine (Mac, Linux, cloud VM).
-# Merges second brain + caveman ultra hooks into the global ~/.claude/settings.json
-# so all three behaviors fire in EVERY Claude Code project, not just this repo.
+# Installs the LNM Brain auto-memory hooks for Claude Code in EVERY project:
+#   SessionStart     → loads your latest handoff + recent captures
+#   UserPromptSubmit → injects memories relevant to each prompt
+#   Stop/SessionEnd  → saves a digest of the session (throttled, runs in background)
 #
-# Usage:  bash scripts/setup-global-hooks.sh
+# It writes your worker URL + API key to ~/.config/lnm-brain/config (chmod 600),
+# copies the hook scripts to ~/.config/lnm-brain/hooks/, checks the key against your
+# worker, backs up ~/.claude/settings.json, then merges the hooks into it.
+#
+# Usage (from the repo root):
+#   bash scripts/setup-global-hooks.sh
+# Non-interactive:
+#   BRAIN_BASE_URL=https://<worker>.<subdomain>.workers.dev BRAIN_API_KEY=<key> bash scripts/setup-global-hooks.sh
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.."; pwd)"
-SCRIPTS="$REPO_DIR/codex-plugin/second-brain/scripts"
+SRC_HOOKS="$REPO_DIR/codex-plugin/second-brain/scripts"
+CONFIG_DIR="$HOME/.config/lnm-brain"
+CONFIG="$CONFIG_DIR/config"
+HOOK_DIR="$CONFIG_DIR/hooks"
 SETTINGS="$HOME/.claude/settings.json"
 
-# Verify scripts exist
+for bin in jq curl python3; do
+  command -v "$bin" >/dev/null || { echo "ERROR: $bin not found. macOS: brew install $bin" >&2; exit 1; }
+done
 for f in session_start_second_brain.sh user_prompt_submit_second_brain.sh stop_second_brain_capture.sh; do
-  if [ ! -f "$SCRIPTS/$f" ]; then
-    echo "ERROR: missing $SCRIPTS/$f — run from the repo root." >&2
-    exit 1
-  fi
+  [ -f "$SRC_HOOKS/$f" ] || { echo "ERROR: missing $SRC_HOOKS/$f — run from your lnm-brain-public clone." >&2; exit 1; }
 done
 
-# Create global settings file if it doesn't exist
-mkdir -p "$HOME/.claude"
-if [ ! -f "$SETTINGS" ]; then
-  echo '{"hooks":{}}' > "$SETTINGS"
+# 1. Config: worker URL + API key, readable only by you.
+URL="${BRAIN_BASE_URL:-}"
+KEY="${BRAIN_API_KEY:-}"
+if [ -z "$URL$KEY" ] && [ -f "$CONFIG" ]; then
+  echo "Using existing $CONFIG"
+else
+  [ -n "$URL" ] || read -rp "Worker URL (https://<worker>.<subdomain>.workers.dev): " URL
+  [ -n "$KEY" ] || { read -rsp "API key (input hidden): " KEY; echo; }
+  URL="${URL%%\?*}"; URL="${URL%/}"; URL="${URL%/mcp}"
+  mkdir -p "$CONFIG_DIR"; chmod 700 "$CONFIG_DIR"
+  (umask 077; printf 'BRAIN_BASE_URL=%q\nBRAIN_API_KEY=%q\n' "$URL" "$KEY" > "$CONFIG")
+  echo "Saved $CONFIG (chmod 600)"
 fi
+. "$CONFIG"
 
-# Check jq is available
-if ! command -v jq &>/dev/null; then
-  echo "ERROR: jq not found. Install it: brew install jq" >&2
+# 2. Check the key before touching Claude Code settings.
+CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -H "X-API-Key: $BRAIN_API_KEY" "$BRAIN_BASE_URL/api/home-feed" || true)
+if [ "$CODE" != "200" ]; then
+  echo "ERROR: $BRAIN_BASE_URL answered HTTP $CODE with this key (expected 200)." >&2
+  echo "  401 = wrong key · 503 = API_KEY secret not set on the worker · 000 = wrong URL / offline" >&2
   exit 1
 fi
+echo "Worker reachable, key accepted."
 
-SS_CMD="bash $SCRIPTS/session_start_second_brain.sh"
-UPS_CMD="bash $SCRIPTS/user_prompt_submit_second_brain.sh"
-STOP_CMD="bash $SCRIPTS/stop_second_brain_capture.sh"
+# 3. Copy hooks out of the repo so moving or deleting the clone doesn't break them.
+mkdir -p "$HOOK_DIR"
+install -m 755 "$SRC_HOOKS/session_start_second_brain.sh" "$SRC_HOOKS/user_prompt_submit_second_brain.sh" \
+  "$SRC_HOOKS/stop_second_brain_capture.sh" "$HOOK_DIR/"
 
-# Merge hooks — adds ours only if not already present, preserves all existing hooks
+# 4. Merge into ~/.claude/settings.json (backup first; existing hooks are kept).
+mkdir -p "$HOME/.claude"
+[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
+cp "$SETTINGS" "$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
 UPDATED=$(jq \
-  --arg ss  "$SS_CMD" \
-  --arg ups "$UPS_CMD" \
-  --arg stp "$STOP_CMD" '
+  --arg ss  "bash \"$HOOK_DIR/session_start_second_brain.sh\"" \
+  --arg ups "bash \"$HOOK_DIR/user_prompt_submit_second_brain.sh\"" \
+  --arg stp "bash \"$HOOK_DIR/stop_second_brain_capture.sh\"" '
   def add_hook(event; cmd):
     .hooks[event] = (
-      (.hooks[event] // []) +
-      [{"hooks": [{"type": "command", "command": cmd}]}]
+      ((.hooks[event] // []) + [{"hooks": [{"type": "command", "command": cmd}]}])
       | unique_by(.hooks[0].command)
     );
-  add_hook("SessionStart"; $ss)
+  .hooks = (.hooks // {})
+  | add_hook("SessionStart"; $ss)
   | add_hook("UserPromptSubmit"; $ups)
   | add_hook("Stop"; $stp)
+  | add_hook("SessionEnd"; $stp)
 ' "$SETTINGS")
-
-# Write atomically
 printf '%s\n' "$UPDATED" > "$SETTINGS.tmp" && mv "$SETTINGS.tmp" "$SETTINGS"
 
-echo "Done. Updated: $SETTINGS"
-echo ""
-echo "All three behaviors now active in EVERY Claude Code project:"
-echo "  SessionStart    → second brain reminder + caveman ultra ruleset"
-echo "  UserPromptSubmit → second brain query + caveman ultra per-turn"
-echo "  Stop            → auto-capture to second brain"
-echo ""
-echo "Restart Claude Code to apply."
+echo "Done. Hooks added to $SETTINGS (backup saved next to it)."
+echo "Restart Claude Code. Capture errors, if any, are logged to ~/.cache/lnm-brain/capture.log"
+echo "To remove: delete the four lnm-brain entries under \"hooks\" in $SETTINGS."

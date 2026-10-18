@@ -221,7 +221,7 @@
                 </div>
                 <div class="col form-group">
                     <label for="entities">Entities (comma-separated)</label>
-                    <input type="text" id="entities" placeholder="e.g., Ritik, SharpSites, GitHub">
+                    <input type="text" id="entities" placeholder="e.g., Alice, Acme Corp, GitHub">
                 </div>
             </div>
             
@@ -242,8 +242,20 @@
     </div>
     
     <script>
-        const BRAIN_API = 'https://your-worker-subdomain.workers.dev/capture';
-        const API_KEY = 'YOUR_API_KEY';
+        // Never hard-code your key here. Open this page as
+        //   capture.html#url=https://<worker>.<subdomain>.workers.dev&key=<API_KEY>
+        // (the #part is never sent to any server) or answer the prompts.
+        // Both values are kept in this browser tab only.
+        function brainConfig() {
+            const h = new URLSearchParams(location.hash.slice(1));
+            for (const k of ['url', 'key']) if (h.get(k)) sessionStorage.setItem('lnm_' + k, h.get(k));
+            if (h.get('url') || h.get('key')) history.replaceState(null, '', location.pathname);
+            let url = sessionStorage.getItem('lnm_url') || '';
+            let key = sessionStorage.getItem('lnm_key') || '';
+            if (!url) { url = (prompt('Worker URL (https://<worker>.<subdomain>.workers.dev):') || '').trim().replace(/\/+$/, ''); sessionStorage.setItem('lnm_url', url); }
+            if (!key) { key = (prompt('API key:') || '').trim(); sessionStorage.setItem('lnm_key', key); }
+            return { url, key };
+        }
         
         function showStatus(message, type) {
             const status = document.getElementById('status');
@@ -277,11 +289,12 @@
             };
             
             try {
-                const response = await fetch(BRAIN_API, {
+                const { url, key } = brainConfig();
+                const response = await fetch(url + '/capture', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-API-Key': API_KEY
+                        'X-API-Key': key
                     },
                     body: JSON.stringify(data)
                 });

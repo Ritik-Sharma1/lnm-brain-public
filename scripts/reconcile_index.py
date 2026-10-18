@@ -7,8 +7,8 @@ Usage:
 """
 import json, os, sys, urllib.request, time
 
-KEY = os.environ.get("BRAIN_KEY", "YOUR_API_KEY")
-BASE = "https://your-worker-subdomain.workers.dev"
+KEY = os.environ.get("BRAIN_API_KEY") or os.environ.get("BRAIN_KEY", "")
+BASE = os.environ.get("BRAIN_BASE_URL", "https://<worker>.<subdomain>.workers.dev").rstrip("/")
 DRY = "--dry-run" in sys.argv
 
 url = f"{BASE}/reconcile-index?key={KEY}"
@@ -18,7 +18,7 @@ print(f"Reconciler drain {'(DRY RUN) ' if DRY else ''}starting...")
 
 while True:
     body = json.dumps({"cursor": cursor, "batch": 40, "dry_run": DRY}).encode()
-    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json", "User-Agent": "lnm-brain-script"})
     try:
         r = json.load(urllib.request.urlopen(req, timeout=90))
     except Exception as e:

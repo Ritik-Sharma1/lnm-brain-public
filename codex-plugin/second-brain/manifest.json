@@ -23,7 +23,7 @@
     "developerName": "LNM Brain Contributors",
     "category": "Productivity",
     "capabilities": ["Read", "Write", "Context Injection", "Knowledge Capture"],
-    "websiteURL": "https://your-worker-subdomain.workers.dev",
+    "websiteURL": "https://<worker>.<subdomain>.workers.dev",
     "defaultPrompt": [
       "Query my Second Brain before meaningful work that depends on prior context.",
       "Ingest durable outcomes back into memory.",
@@ -34,20 +34,20 @@
   "scope": {"installation": "global", "availability": "all-projects"},
   "transport": {
     "preferred": "mcp",
-    "mcpUrl": "https://your-worker-subdomain.workers.dev/mcp?key=YOUR_API_KEY",
-    "restBaseUrl": "https://your-worker-subdomain.workers.dev"
+    "mcpUrl": "https://<worker>.<subdomain>.workers.dev/mcp?key=<your-API-key>",
+    "restBaseUrl": "https://<worker>.<subdomain>.workers.dev"
   },
   "auth": {
     "type": "header",
     "header": "x-api-key",
-    "value": "YOUR_API_KEY",
-    "queryFallback": {"name": "key", "value": "YOUR_API_KEY"}
+    "value": "<your-API-key>",
+    "queryFallback": {"name": "key", "value": "<your-API-key>"}
   },
   "automation": {
     "beforeEveryTask": {
       "action": "query",
       "description": "Look up relevant prior context before meaningful work.",
-      "http": {"method": "GET", "urlTemplate": "https://your-worker-subdomain.workers.dev/query?q={topic}&key=YOUR_API_KEY"},
+      "http": {"method": "GET", "urlTemplate": "https://<worker>.<subdomain>.workers.dev/query?q={topic}&key=<your-API-key>"},
       "injectResultAs": "context",
       "resultPriority": "primary"
     },
@@ -56,8 +56,8 @@
       "description": "Persist durable outcomes after meaningful work.",
       "http": {
         "method": "POST",
-        "url": "https://your-worker-subdomain.workers.dev/ingest",
-        "headers": {"x-api-key": "YOUR_API_KEY", "content-type": "application/json"}
+        "url": "https://<worker>.<subdomain>.workers.dev/ingest",
+        "headers": {"x-api-key": "<your-API-key>", "content-type": "application/json"}
       },
       "bodyTemplate": {
         "title": "{title}",
@@ -69,14 +69,14 @@
     }
   },
   "actions": [
-    {"name": "query", "method": "GET", "path": "/query", "query": {"q": "{topic}", "key": "YOUR_API_KEY"}, "injectResultAs": "context"},
-    {"name": "semantic_search", "method": "POST", "path": "/search", "headers": {"x-api-key": "YOUR_API_KEY", "content-type": "application/json"}, "body": "{payload}"},
-    {"name": "capture", "method": "POST", "path": "/capture", "headers": {"x-api-key": "YOUR_API_KEY", "content-type": "application/json"}, "body": "{payload}"},
-    {"name": "ingest", "method": "POST", "path": "/ingest", "headers": {"x-api-key": "YOUR_API_KEY", "content-type": "application/json"}, "body": {"title": "{title}", "content": "{content}", "type": "conversation", "tags": "{tags}", "entities": "{entities}"}},
-    {"name": "lint", "method": "POST", "path": "/lint", "headers": {"x-api-key": "YOUR_API_KEY", "content-type": "application/json"}, "body": "{payload}"},
-    {"name": "read_file", "method": "GET", "path": "/file", "query": {"path": "{path}", "key": "YOUR_API_KEY"}},
-    {"name": "get_graph", "method": "GET", "path": "/graph", "headers": {"x-api-key": "YOUR_API_KEY"}},
-    {"name": "write_file", "method": "POST", "path": "/write", "headers": {"x-api-key": "YOUR_API_KEY", "content-type": "application/json"}, "body": "{payload}"}
+    {"name": "query", "method": "GET", "path": "/query", "query": {"q": "{topic}", "key": "<your-API-key>"}, "injectResultAs": "context"},
+    {"name": "semantic_search", "method": "POST", "path": "/search", "headers": {"x-api-key": "<your-API-key>", "content-type": "application/json"}, "body": "{payload}"},
+    {"name": "capture", "method": "POST", "path": "/capture", "headers": {"x-api-key": "<your-API-key>", "content-type": "application/json"}, "body": "{payload}"},
+    {"name": "ingest", "method": "POST", "path": "/ingest", "headers": {"x-api-key": "<your-API-key>", "content-type": "application/json"}, "body": {"title": "{title}", "content": "{content}", "type": "conversation", "tags": "{tags}", "entities": "{entities}"}},
+    {"name": "lint", "method": "POST", "path": "/lint", "headers": {"x-api-key": "<your-API-key>", "content-type": "application/json"}, "body": "{payload}"},
+    {"name": "read_file", "method": "GET", "path": "/file", "query": {"path": "{path}", "key": "<your-API-key>"}},
+    {"name": "get_graph", "method": "GET", "path": "/graph", "headers": {"x-api-key": "<your-API-key>"}},
+    {"name": "write_file", "method": "POST", "path": "/write", "headers": {"x-api-key": "<your-API-key>", "content-type": "application/json"}, "body": "{payload}"}
   ],
   "systemPrompt": [
     "Use the current user's independently deployed Second Brain, never another person's example data.",

@@ -74,7 +74,7 @@ def infer_surface(obs: dict) -> tuple[Optional[str], float, str]:
 def post_json(url: str, payload: dict, timeout: int = 30) -> dict:
     body = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=body, method="POST",
-                                  headers={"content-type": "application/json"})
+                                  headers={"content-type": "application/json", "user-agent": "lnm-brain-script"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode())
 

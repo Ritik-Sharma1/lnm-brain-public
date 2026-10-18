@@ -1,24 +1,30 @@
 #!/usr/bin/env bash
-# Hybrid hook: retrieve relevant Second Brain context when possible; otherwise request MCP recall.
+# UserPromptSubmit: inject relevant Second Brain memories for the prompt (hybrid recall).
+# Reads BRAIN_BASE_URL + BRAIN_API_KEY from ~/.config/lnm-brain/config.
 set -uo pipefail
 
+CONFIG="${LNM_BRAIN_CONFIG:-$HOME/.config/lnm-brain/config}"
+[ -f "$CONFIG" ] && . "$CONFIG"
+[ -n "${BRAIN_API_KEY:-}" ] && [ -n "${BRAIN_BASE_URL:-}" ] || exit 0
+
 INPUT=$(cat)
-PROMPT=$(printf '%s' "$INPUT" | jq -r '.message // ""' 2>/dev/null || echo "")
+# Claude Code sends the text as .prompt; other hosts use .message.
+PROMPT=$(printf '%s' "$INPUT" | jq -r '.prompt // .message // ""' 2>/dev/null || echo "")
 [ ${#PROMPT} -lt 5 ] && exit 0
 
-API_KEY="${BRAIN_API_KEY:-YOUR_API_KEY}"
-BASE_URL="${BRAIN_BASE_URL:-https://your-worker-subdomain.workers.dev}"
 QUERY=$(printf '%s' "$PROMPT" | head -c 300)
+MAX_CHARS="${LNM_RECALL_CHARS:-2000}"
 
-RESULT=$(curl -sf --max-time 8 -G \
+RESULT=$(curl -sf --max-time 6 -G \
   --data-urlencode "q=$QUERY" \
-  -H "x-api-key: $API_KEY" \
-  "$BASE_URL/query" 2>/dev/null || echo "")
+  --data-urlencode "limit=5" \
+  -H "X-API-Key: $BRAIN_API_KEY" \
+  "$BRAIN_BASE_URL/recall" 2>/dev/null || echo "")
 
 if [ -n "$RESULT" ]; then
   printf '\n[second-brain] Relevant memory context:\n%s\n' \
-    "$(printf '%s' "$RESULT" | head -c 4000)"
+    "$(printf '%s' "$RESULT" | head -c "$MAX_CHARS")"
 else
   TOPIC=$(printf '%s' "$PROMPT" | head -c 120)
-  printf '\n[second-brain] Before relying on prior state, call query_second_brain with topic: "%s".\n' "$TOPIC"
+  printf '\n[second-brain] Before relying on prior state, call recall_brain with topic: "%s".\n' "$TOPIC"
 fi

@@ -37,7 +37,7 @@ This plugin bundle **does not register another MCP server inside the plugin itse
 That is intentional. Your Second Brain MCP server is better added once at the global Codex level:
 
 ```bash
-codex mcp add second-brain --url "https://your-worker-subdomain.workers.dev/mcp?key=YOUR_API_KEY"
+codex mcp add second-brain --url "<worker-url>/mcp?key=<your-API-key>"   # this URL is a password
 ```
 
 By keeping MCP registration global and the auto layer separate, we avoid duplicate tool registrations or collisions with existing tool connections.
@@ -80,10 +80,12 @@ By keeping MCP registration global and the auto layer separate, we avoid duplica
 
 ## Connection Details
 
-- Base URL: `https://your-worker-subdomain.workers.dev`
-- MCP URL: `https://your-worker-subdomain.workers.dev/mcp?key=YOUR_API_KEY`
-- Auth header: `x-api-key: YOUR_API_KEY`
-- Query fallback auth: `?key=YOUR_API_KEY`
+- Base URL: `<worker-url>` (`https://<worker>.<subdomain>.workers.dev`)
+- MCP URL: `<worker-url>/mcp`
+- Auth header: `x-api-key: <your-API-key>`
+- Query fallback auth: `?key=<your-API-key>` (a URL with the key in it is a password)
+- The hook scripts read `BRAIN_BASE_URL` and `BRAIN_API_KEY` from `~/.config/lnm-brain/config`
+  (written by `scripts/setup-global-hooks.sh`).
 
 ## Why This Does Not Disturb Other Repo Connections
 
