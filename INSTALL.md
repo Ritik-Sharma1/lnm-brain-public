@@ -125,19 +125,7 @@ GITHUB_REPO = "<your-github-username>/my-brain-data"
 GITHUB_BRANCH = "main"
 ```
 
-## Step 4. Create a GitHub token for that one repo
-
-1. Open [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)
-   (Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token).
-2. **Token name:** `lnm-brain`. **Expiration:** your choice (put a reminder in your calendar).
-3. **Repository access:** **Only select repositories** → pick `my-brain-data`.
-4. **Permissions → Repository permissions → Contents → Read and write.**
-   (GitHub adds *Metadata: Read-only* by itself. Nothing else is needed.)
-5. Click **Generate token** and copy it. GitHub shows it only once.
-
-Keep it on your clipboard for Step 7. Do not paste it anywhere else.
-
-## Step 5. Create the Cloudflare storage
+## Step 4. Create the Cloudflare storage
 
 Run these three commands. If wrangler asks *"Would you like Wrangler to add it on your
 behalf?"*, answer **No**: the config already has a slot for each one.
@@ -161,7 +149,7 @@ npx wrangler d1 execute lnm-brain-fts --remote --file=../migrations/003_hermes.s
 npx wrangler d1 execute lnm-brain-fts --remote --file=../migrations/004_projects.sql -y
 ```
 
-## Step 6. Deploy
+## Step 5. Deploy
 
 ```bash
 npx wrangler deploy
@@ -175,9 +163,9 @@ https://my-lnm-brain.<your-subdomain>.workers.dev
 ```
 
 Save it; the rest of this guide calls it `<worker-url>`. Right now the brain is locked: every
-memory route answers `503 API_KEY not configured` until Step 7. That is on purpose.
+memory route answers `503 API_KEY not configured` until Step 6. That is on purpose.
 
-## Step 7. Set the secrets
+## Step 6. Create your API key
 
 Generate a random API key straight into a private file (it is never printed), then give it
 to the worker:
@@ -188,14 +176,50 @@ openssl rand -hex 32 | tr -d '\n' > ~/.config/lnm-brain/api-key && chmod 600 ~/.
 npx wrangler secret put API_KEY < ~/.config/lnm-brain/api-key
 ```
 
-Now the GitHub token. Run this yourself and paste the token from Step 4 when it asks:
-
-```bash
-npx wrangler secret put GITHUB_TOKEN
-```
-
-Also save the API key in your password manager. To copy it on a Mac:
+Also save the key in your password manager. To copy it on a Mac:
 `pbcopy < ~/.config/lnm-brain/api-key`.
+
+## Step 7. Give the brain access to your GitHub repo
+
+The brain saves every note as a file in your private repo, so it needs a GitHub **token**: a
+password that only works for that one repo. It takes about 2 minutes. Do the whole step in one
+go: GitHub shows the token only once, and copying anything else replaces it on your clipboard.
+
+1. Open **[github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)**.
+   The same page through the menus: your profile picture (top right) → **Settings** →
+   **Developer settings** (bottom of the left menu) → **Personal access tokens** →
+   **Fine-grained tokens** → **Generate new token**.
+2. GitHub may first ask you to confirm your password, passkey or 2FA code. That's normal.
+3. Fill in the form:
+
+   | Field | What to choose |
+   |---|---|
+   | **Token name** | `lnm-brain` |
+   | **Resource owner** | yourself (your username) |
+   | **Expiration** | the longest you're comfortable with, for example 1 year. Put a reminder in your calendar: when it expires, notes stop reaching GitHub until you make a new token. |
+   | **Repository access** | **Only select repositories** → pick your memory repo (`my-brain-data`) |
+   | **Permissions** | **Repository permissions** → **Contents** → **Read and write**. If you see an **Add permissions** button instead, click it, tick **Contents**, then set it to **Read and write**. GitHub adds **Metadata: Read-only** by itself. Leave everything else alone. |
+
+4. Click **Generate token** (and confirm if asked). The token is shown once and starts with
+   `github_pat_`. Click the **copy icon** next to it. Don't paste it into a chat, a note or a
+   screenshot. (If yours starts with `ghp_`, you made a *classic* token, which can reach all your
+   repos: delete it and make a fine-grained one.)
+5. In your terminal, still in the `worker` folder, run:
+
+   ```bash
+   npx wrangler secret put GITHUB_TOKEN
+   ```
+
+   When it asks for the value, paste the token and press **Enter**. The paste may show as `****`
+   or as nothing at all; both are fine, the input is hidden on purpose. You should see:
+
+   ```text
+   ✨ Success! Uploaded secret GITHUB_TOKEN
+   ```
+
+   If it asks whether to create a new Worker, Step 5 didn't finish: answer `y`, or run
+   `npx wrangler deploy` and try again. If it says `Authentication error`, redo Step 2
+   (`npx wrangler login`, click **Allow**) first.
 
 ## Step 8. Check that it works
 
@@ -233,7 +257,7 @@ claude mcp add --transport http --scope user lnm-brain "<worker-url>/mcp" \
 claude mcp list
 ```
 
-`claude mcp list` should show `lnm-brain … ✓ Connected`. In a Claude Code chat, `/mcp`
+`claude mcp list` should show `lnm-brain: … (HTTP) - ✔ Connected`. In a Claude Code chat, `/mcp`
 lists its 27 tools. `--scope user` makes it available in every project.
 
 ## Step 10. Connect the Claude app (web, desktop and phone)
@@ -350,16 +374,17 @@ connector (Step 10), and re-run Step 11 with the new key.
 
 | You see | Fix |
 |---|---|
-| `503 … API_KEY not configured` | Step 7 isn't done, or the key is shorter than 16 characters or a placeholder like `YOUR_API_KEY`. |
+| `503 … API_KEY not configured` | Step 6 isn't done, or the key is shorter than 16 characters or a placeholder like `YOUR_API_KEY`. |
 | `401 Invalid API key` / `API key required` | The key you sent doesn't match. Check the `X-API-Key` header or the `?key=` part of the URL. |
 | `wrangler deploy` fails with `ETIMEDOUT` | Some networks block Node from reaching api.cloudflare.com. Try another network, or deploy with curl: set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, then run `node scripts/deploy-via-curl.js`. |
 | `Authentication error [code: 10000]` while creating D1 or Vectorize | A `CLOUDFLARE_API_TOKEN` in your shell overrides `wrangler login` and lacks those permissions. Run `unset CLOUDFLARE_API_TOKEN`, then `npx wrangler login` (Step 2). |
-| `REPLACE_WITH_YOUR_…` / binding errors on deploy | Paste the KV `id` and D1 `database_id` from Step 5 into `wrangler.toml`. |
+| `REPLACE_WITH_YOUR_…` / binding errors on deploy | Paste the KV `id` and D1 `database_id` from Step 4 into `wrangler.toml`. |
 | `github_ping` shows `401` or `404` in Step 8 | Wrong `GITHUB_REPO`, or the token lacks **Contents: Read and write** on that repo. Fix and run `npx wrangler secret put GITHUB_TOKEN` again. |
 | Vectorize `dimension mismatch` errors | The index wasn't created with `--dimensions=1024 --metric=cosine`. Run `npx wrangler vectorize delete lnm-brain-m3`, create it again, then redeploy. |
 | `Worker exceeded resource limits` (1102), or KV/D1/Vectorize "limit exceeded" | You hit a Free-plan limit. Upgrade to Workers Paid. |
 | Claude app connector won't connect | The URL must end in `/mcp` (plus `?key=…` if you didn't use a request header). Test it: `curl -s -X POST "<worker-url>/mcp" -H "X-API-Key: <key>" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \| head -c 200` |
 | Hooks do nothing | Restart Claude Code. Check `~/.cache/lnm-brain/capture.log`, and run `bash ~/.config/lnm-brain/hooks/session_start_second_brain.sh` to see its output. |
+| Lost the GitHub token, or it expired | Make a new one (Step 7) and run `npx wrangler secret put GITHUB_TOKEN` again. Revoke the old one on the same GitHub page. |
 | More than one Cloudflare account | Add `account_id = "<id>"` to `wrangler.toml` (Step 2). |
 
 ## Uninstall

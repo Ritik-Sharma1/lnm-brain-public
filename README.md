@@ -255,6 +255,11 @@ The worker is designed to degrade gracefully where possible—for example, falli
 
 ## Install
 
+**New to terminals and GitHub?** Start with [INSTALL.md](INSTALL.md) anyway: every step is a
+copy-paste command or a click-by-click list, including the GitHub token
+([Step 7](INSTALL.md#step-7-give-the-brain-access-to-your-github-repo)). Or paste its one-prompt
+installer into Claude Code and let it do the typing.
+
 Follow **[INSTALL.md](INSTALL.md)**. It covers prerequisites, the private data repo, the
 GitHub token, the Cloudflare resources, secrets, deploy, health checks, connecting Claude Code
 and the Claude app (web, desktop, phone), the auto-memory hooks, and troubleshooting. It also
