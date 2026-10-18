@@ -1,8 +1,10 @@
 name: Auto-Sync Knowledge Graph
 
+# Manual-only in the public template. Only useful in a repo that also holds your
+# raw/ and wiki/ notes; re-enable the schedule there if you want hourly graph syncs.
 on:
-  schedule:
-    - cron: '0 * * * *'   # every hour
+  # schedule:
+  #   - cron: '0 * * * *'   # every hour
   workflow_dispatch:
 
 # Never run two syncs in parallel — queue them

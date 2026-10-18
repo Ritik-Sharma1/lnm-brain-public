@@ -1,48 +1,68 @@
 #!/usr/bin/env node
-// Deploy lnm-brain worker via CF REST API using curl as the transport.
-// Reason: Node's undici fetch ETIMEDOUTs to api.cloudflare.com in this env,
-// but curl reaches it fine. Wrangler is Node-based → blocked. This script
-// assembles the multipart upload and shells out to curl.
+// Fallback deploy through the Cloudflare REST API, using curl as the transport.
+// Use it only when `npx wrangler deploy` fails with ETIMEDOUT talking to
+// api.cloudflare.com (seen on some networks where Node's fetch can't connect but
+// curl can). Normal installs should use `npx wrangler deploy`.
 //
-// Env required: CLOUDFLARE_API_TOKEN
-// Bindings are replicated from the live worker settings (secrets inherit).
+// Required env:
+//   CLOUDFLARE_API_TOKEN   token with "Edit Cloudflare Workers" permission
+//   CLOUDFLARE_ACCOUNT_ID  your account id (dashboard → Workers & Pages → right sidebar)
+// Everything else (worker name, GITHUB_REPO, KV/D1/Vectorize ids, cron) is read from
+// wrangler.toml. Override with LNM_WORKER_NAME, LNM_KV_ID, LNM_D1_ID, LNM_VECTORIZE_INDEX.
+// Secrets are never sent: secrets already set with `wrangler secret put` are kept.
+//
+// Usage (from worker/):  node scripts/deploy-via-curl.js
 
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const ACC = "70ad91964c2a7e85159056d22b484c6c";
 const TOK = process.env.CLOUDFLARE_API_TOKEN;
-if (!TOK) { console.error("CLOUDFLARE_API_TOKEN not set"); process.exit(1); }
+const ACC = process.env.CLOUDFLARE_ACCOUNT_ID;
+if (!TOK || !ACC) { console.error("Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID first."); process.exit(1); }
 
-const SRC = path.join(__dirname, "..", "src");
+const ROOT = path.join(__dirname, "..");
+const SRC = path.join(ROOT, "src");
+const toml = fs.readFileSync(path.join(ROOT, "wrangler.toml"), "utf8");
+const tomlValue = (key) => { const m = toml.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, "m")); return m ? m[1] : ""; };
+
+const NAME = process.env.LNM_WORKER_NAME || tomlValue("name");
+const KV_ID = process.env.LNM_KV_ID || tomlValue("id");
+const D1_ID = process.env.LNM_D1_ID || tomlValue("database_id");
+const VEC = process.env.LNM_VECTORIZE_INDEX || tomlValue("index_name");
+const CRON = (toml.match(/crons\s*=\s*\[\s*"([^"]+)"/) || [])[1];
+for (const [k, v] of Object.entries({ NAME, KV_ID, D1_ID, VEC })) {
+  if (!v || v.startsWith("REPLACE_WITH")) { console.error(`${k} is not set — fill in wrangler.toml first (see INSTALL.md).`); process.exit(1); }
+}
+
+// Upload index.js plus every local module it imports (transitively).
 const MAIN = "index.js";
-const MODULES = ["index.js", "consolidation.js", "rerank.js", "critic.js", "memory_type.js", "bitemporal.js", "triple-stats.js", "self-model.js"];
+const modules = [];
+(function walk(file) {
+  if (modules.includes(file)) return;
+  modules.push(file);
+  const code = fs.readFileSync(path.join(SRC, file), "utf8");
+  for (const m of code.matchAll(/from\s+["']\.\/([\w.-]+\.js)["']/g)) walk(m[1]);
+})(MAIN);
 
-// Bindings replicated from live settings. Secrets use inherit (no value sent).
-const SECRETS = ["ADMIN_KEY","DEEPSEEK_API_Key","DRACARYS_API_Key","GITHUB_APP_ID","GITHUB_APP_PRIVATE_KEY","GITHUB_INSTALLATION_ID","GITHUB_TOKEN","GLM_4.7_API_Key","Minimax_M2.7_API_Key","MISTRAL_LARGE_API_Key","MISTRAL_NEMOTRON_API_Key","STEP_API_Key","TELEGRAM_TOKEN"];
 const bindings = [
-  ...SECRETS.map(name => ({ type: "inherit", name })),
   { type: "ai", name: "AI" },
-  { type: "d1", name: "DB", id: "d333a609-4344-47b0-ae1c-6ccea167ef97" },
-  { type: "plain_text", name: "GITHUB_BRANCH", text: "main" },
-  { type: "plain_text", name: "GITHUB_REPO", text: "your-username/your-repo" },
-  { type: "vectorize", name: "VECTORIZE", index_name: "lnm-brain-m3" },
-  { type: "vectorize", name: "VECTORIZE_OLD", index_name: "lnm-brain-vectors" },
-  { type: "kv_namespace", name: "VECTORS", namespace_id: "d842c3ef4aa74e89a70933d0aeeff8db" },
+  { type: "d1", name: "DB", id: D1_ID },
+  { type: "plain_text", name: "GITHUB_BRANCH", text: tomlValue("GITHUB_BRANCH") || "main" },
+  { type: "plain_text", name: "GITHUB_REPO", text: tomlValue("GITHUB_REPO") },
+  { type: "vectorize", name: "VECTORIZE", index_name: VEC },
+  { type: "kv_namespace", name: "VECTORS", namespace_id: KV_ID },
 ];
-
 const metadata = {
   main_module: MAIN,
-  compatibility_date: "2024-11-01",
+  compatibility_date: tomlValue("compatibility_date") || "2024-11-01",
   compatibility_flags: ["nodejs_compat"],
   bindings,
   observability: { enabled: true },
-  // keep_bindings preserves any binding type not explicitly resent (belt+braces for secrets)
   keep_bindings: ["secret_text", "secret_key"],
 };
 
-// Build multipart body manually (curl --form mangles content-type for modules).
+// Multipart body built by hand (curl --form mangles the module content type).
 const BOUNDARY = "----lnmdeploy" + Date.now();
 const parts = [];
 function pushPart(headers, body) {
@@ -50,47 +70,33 @@ function pushPart(headers, body) {
   parts.push(Buffer.isBuffer(body) ? body : Buffer.from(body));
   parts.push(Buffer.from("\r\n"));
 }
-
-// metadata part
 pushPart(`Content-Disposition: form-data; name="metadata"`, JSON.stringify(metadata));
-// module parts — each as application/javascript+module
-for (const m of MODULES) {
-  const content = fs.readFileSync(path.join(SRC, m));
-  pushPart(
-    `Content-Disposition: form-data; name="${m}"; filename="${m}"\r\nContent-Type: application/javascript+module`,
-    content
-  );
+for (const m of modules) {
+  pushPart(`Content-Disposition: form-data; name="${m}"; filename="${m}"\r\nContent-Type: application/javascript+module`,
+    fs.readFileSync(path.join(SRC, m)));
 }
 parts.push(Buffer.from(`--${BOUNDARY}--\r\n`));
-const body = Buffer.concat(parts);
-
 const tmp = path.join(__dirname, ".deploy-body.tmp");
-fs.writeFileSync(tmp, body);
+fs.writeFileSync(tmp, Buffer.concat(parts));
 
-const url = `https://api.cloudflare.com/client/v4/accounts/${ACC}/workers/scripts/lnm-brain`;
-console.log(`Uploading ${body.length} bytes (${MODULES.length} modules, ${bindings.length} bindings)...`);
+const API = `https://api.cloudflare.com/client/v4/accounts/${ACC}/workers/scripts/${NAME}`;
+function cf(method, url, args) {
+  const out = execFileSync("curl", ["-s", "--max-time", "60", "-X", method, url, "-H", `Authorization: Bearer ${TOK}`, ...args],
+    { maxBuffer: 10 * 1024 * 1024 }).toString();
+  const j = JSON.parse(out);
+  if (!j.success) throw new Error(`${method} ${url.replace(ACC, "<account>")} failed: ${JSON.stringify(j.errors)}`);
+  return j.result;
+}
 
 try {
-  const out = execFileSync("curl", [
-    "-s", "--max-time", "60", "-X", "PUT", url,
-    "-H", `Authorization: Bearer ${TOK}`,
-    "-H", `Content-Type: multipart/form-data; boundary=${BOUNDARY}`,
-    "--data-binary", `@${tmp}`,
-  ], { maxBuffer: 10 * 1024 * 1024 }).toString();
-  fs.unlinkSync(tmp);
-  const j = JSON.parse(out);
-  if (!j.success) {
-    console.error("DEPLOY FAILED:");
-    console.error(JSON.stringify(j.errors, null, 2));
-    process.exit(1);
-  }
-  console.log("DEPLOY OK");
-  console.log("  id:", j.result?.id);
-  console.log("  modified:", j.result?.modified_on);
-  console.log("  startup_time_ms:", j.result?.startup_time_ms);
+  console.log(`Uploading ${NAME}: ${modules.length} modules, ${bindings.length} bindings...`);
+  const r = cf("PUT", API, ["-H", `Content-Type: multipart/form-data; boundary=${BOUNDARY}`, "--data-binary", `@${tmp}`]);
+  if (CRON) cf("PUT", `${API}/schedules`, ["-H", "Content-Type: application/json", "--data", JSON.stringify([{ cron: CRON }])]);
+  cf("POST", `${API}/subdomain`, ["-H", "Content-Type: application/json", "--data", JSON.stringify({ enabled: true })]);
+  console.log("DEPLOY OK  id:", r?.id, " modified:", r?.modified_on);
 } catch (e) {
+  console.error(e.message);
+  process.exitCode = 1;
+} finally {
   try { fs.unlinkSync(tmp); } catch {}
-  console.error("curl error:", e.message);
-  if (e.stdout) console.error(e.stdout.toString());
-  process.exit(1);
 }

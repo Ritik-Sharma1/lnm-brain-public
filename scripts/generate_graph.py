@@ -18,11 +18,11 @@ from collections import defaultdict
 DOMAIN_HEADS = [
     {"id": "cluster:code",     "label": "Code & Dev",      "keywords": ["worker","deploy","wrangler","cloudflare","github","code","fix","bug","api","function","script","tool","lnm","brain"]},
     {"id": "cluster:design",   "label": "Design",           "keywords": ["ui","ux","design","figma","css","layout","brand","visual","color","svg","banner"]},
-    {"id": "cluster:work",     "label": "Work & Business",  "keywords": ["linkedin","ghostwriting","client","sales","marketing","leads","outreach","ExampleProject","ExampleProject","campaign","content"]},
-    {"id": "cluster:personal", "label": "Personal",         "keywords": ["ritik","health","fa","ataxia","adhd","diet","exercise","supplement","personal","journal","daily"]},
-    {"id": "cluster:research", "label": "Research",         "keywords": ["research","study","analysis","copyos","strategy","framework","model","economics","data","report"]},
-    {"id": "cluster:health",   "label": "Health & Wellness","keywords": ["health","fa","ataxia","supplement","idebenone","magnesium","vitamin","diet","exercise","gut","spine"]},
-    {"id": "cluster:finance",  "label": "Finance",          "keywords": ["income","revenue","pricing","payment","upi","money","finance","cost","profit","subscription"]},
+    {"id": "cluster:work",     "label": "Work & Business",  "keywords": ["client","sales","marketing","leads","outreach","customer","campaign","content","meeting","hiring"]},
+    {"id": "cluster:personal", "label": "Personal",         "keywords": ["personal","family","journal","daily","habit","goal","travel","hobby","home","reading"]},
+    {"id": "cluster:research", "label": "Research",         "keywords": ["research","study","analysis","paper","strategy","framework","model","economics","data","report"]},
+    {"id": "cluster:health",   "label": "Health & Wellness","keywords": ["health","fitness","sleep","diet","exercise","nutrition","doctor","wellness","stress","recovery"]},
+    {"id": "cluster:finance",  "label": "Finance",          "keywords": ["income","revenue","pricing","payment","invoice","money","finance","cost","profit","subscription"]},
 ]
 
 ROOT_ID = "root:index"

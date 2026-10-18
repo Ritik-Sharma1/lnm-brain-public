@@ -7,8 +7,8 @@ Usage:
 """
 import json, os, sys, urllib.request, time
 
-KEY = os.environ.get("BRAIN_KEY", "YOUR_API_KEY")
-BASE = "https://your-worker-subdomain.workers.dev"
+KEY = os.environ.get("BRAIN_API_KEY") or os.environ.get("BRAIN_KEY", "")
+BASE = os.environ.get("BRAIN_BASE_URL", "https://<worker>.<subdomain>.workers.dev").rstrip("/")
 DRY = "--dry-run" in sys.argv
 
 url = f"{BASE}/reconcile-index?key={KEY}"

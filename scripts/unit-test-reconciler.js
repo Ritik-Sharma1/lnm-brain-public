@@ -15,7 +15,7 @@ function assert(c,m){console.log((c?"PASS  ":"FAIL  ")+m);if(!c)FAILS.push(m);}
 // Task 1: hubKeyForPath
 eval(carve("hubKeyForPath"));
 assert(hubKeyForPath("wiki/conversations/2026-05-31-foo.md")==="2026-05","dated → YYYY-MM");
-assert(hubKeyForPath("wiki/entities/ritik-sharma.md")==="_entities","undated entity → _entities");
+assert(hubKeyForPath("wiki/entities/brain-owner.md")==="_entities","undated entity → _entities");
 assert(hubKeyForPath("handoffs/2026-05-17-handoff.md")==="2026-05","dated handoff → YYYY-MM");
 assert(hubKeyForPath("wiki/topics/weird.md")==="_topics","undated topic → _topics");
 

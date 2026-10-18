@@ -1,4 +1,4 @@
-# LNM Brain — Claude / Agent Memory Configuration v10.2.2
+# LNM Brain — Claude / Agent Memory Configuration v10.2.3
 
 This is a reusable integration template. It must point to the current user's own private LNM Brain deployment; it must never contain another person's captured memory, credentials, or profile data.
 
@@ -80,7 +80,7 @@ The handoff should let a cold agent recover most of the working state quickly wi
 
 ## Runtime MCP interface
 
-The v10.2.2 reference worker registers **27 MCP tools**. The worker's `tools/list` response is authoritative:
+The v10.2.3 reference worker registers **27 MCP tools**. The worker's `tools/list` response is authoritative:
 
 `query_second_brain`, `get_entity_facts`, `ask_second_brain`, `semantic_search`, `capture_to_second_brain`, `ingest_to_second_brain`, `get_latest_handoff`, `list_recent`, `get_handoffs`, `get_home_feed`, `lint_second_brain`, `read_second_brain_file`, `get_second_brain_graph`, `write_second_brain_file`, `query_triples`, `get_top_entities`, `find_entity_path`, `get_session_index`, `get_observation`, `get_about_me`, `get_self`, `refresh_about_me`, `get_routing_index`, `keyword_search`, `recall_brain`, `session_context`, `forget`.
 
@@ -107,13 +107,16 @@ Use `forget` to retract stale or incorrect facts, triples, or observations throu
 ## MCP connector placeholder
 
 ```text
-https://your-worker-subdomain.workers.dev/mcp?key=YOUR_API_KEY
+<worker-url>/mcp                      + header  X-API-Key: <your-API-key>
+<worker-url>/mcp?key=<your-API-key>   only when the client can't send headers (this URL is a password)
 ```
+
+Setup for Claude Code and the Claude app: [INSTALL.md](INSTALL.md) Steps 9–10.
 
 ## REST fallback placeholders
 
-Base URL: `https://your-worker-subdomain.workers.dev`  
-Auth header: `x-api-key: YOUR_API_KEY`
+Base URL: `<worker-url>`  
+Auth header: `x-api-key: <your-API-key>` (`Authorization: Bearer <your-API-key>` also works)
 
 Common endpoints include `/ingest`, `/capture`, `/ask`, `/query`, `/search`, `/recall`, `/keyword-search`, `/session-start`, `/graph`, `/file`, `/write`, `/lint`, and `/health`.
 
@@ -126,4 +129,4 @@ Common endpoints include `/ingest`, `/capture`, `/ask`, `/query`, `/search`, `/r
 
 ## Version discipline
 
-Target reference version: **10.2.2**. Keep `worker/package.json`, worker source header, `/health`, README, and agent docs aligned. Do not infer a newer version from stale prose.
+Target reference version: **10.2.3**. Keep `worker/package.json`, worker source header, `/health`, README, and agent docs aligned. Do not infer a newer version from stale prose.

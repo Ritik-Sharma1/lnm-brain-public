@@ -33,8 +33,9 @@ except ImportError:
     sys.exit(1)
 
 # Configuration
-BRAIN_API = "https://your-worker-subdomain.workers.dev"
-API_KEY = "YOUR_API_KEY"
+# Set BRAIN_BASE_URL and BRAIN_API_KEY in your environment (see INSTALL.md).
+BRAIN_API = os.environ.get("BRAIN_BASE_URL", "https://<worker>.<subdomain>.workers.dev").rstrip("/")
+API_KEY = os.environ.get("BRAIN_API_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 if not OPENAI_API_KEY:

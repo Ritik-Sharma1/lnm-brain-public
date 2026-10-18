@@ -35,7 +35,7 @@ t("detectTensions ranks contradictions before loops, no noise loops", () => {
 t("clusterTopics groups recurring titles", () => {
   const obs = [
     {title:"ExampleProject outreach plan"},{title:"ExampleProject tier 1 customers"},
-    {title:"ExampleProject pricing"},{title:"Idebenone dose"},
+    {title:"ExampleProject pricing"},{title:"Marathon training plan"},
   ];
   const c = clusterTopics(obs);
   const sharp = c.find(x => /ExampleProject/i.test(x.topic));

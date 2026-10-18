@@ -1,10 +1,10 @@
-# LNM Brain — Agent Configuration v10.2.2
+# LNM Brain — Agent Configuration v10.2.3
 
 This file is a reusable agent contract for an independently deployed LNM Brain. Replace all deployment placeholders with the user's own private infrastructure.
 
-Worker version: **10.2.2**  
+Worker version: **10.2.3**  
 MCP tools: **27 registered runtime tools**  
-MCP URL: `https://your-worker-subdomain.workers.dev/mcp?key=YOUR_API_KEY`
+MCP URL: `<worker-url>/mcp`, with the key sent as `X-API-Key: <your-API-key>` (setup: [INSTALL.md](INSTALL.md))
 
 ## Session start
 
@@ -126,15 +126,15 @@ Use `forget` for stale or incorrect memory. It performs soft retraction/superses
 - Never commit real API keys, GitHub tokens, Cloudflare IDs, model-provider credentials, or personal captured memory to a public template.
 - Use the user's own private GitHub data repository.
 - Store credentials with Cloudflare secrets or the relevant secret manager.
-- Treat `YOUR_API_KEY`, `your-username/your-repo`, and `your-worker-subdomain` as placeholders only.
+- Treat `<your-API-key>`, `<worker-url>` and `your-username/your-brain-data` as placeholders only. A URL containing `?key=` is a password.
 
 ## Repo and worker placeholders
 
 ```text
 GitHub data repo: your-username/your-private-brain-repo
-Worker: https://your-worker-subdomain.workers.dev
-MCP: https://your-worker-subdomain.workers.dev/mcp?key=YOUR_API_KEY
-Version: 10.2.2
+Worker: <worker-url>   (https://<worker>.<subdomain>.workers.dev)
+MCP: <worker-url>/mcp   (header X-API-Key: <your-API-key>, or ?key=<your-API-key> if headers are impossible)
+Version: 10.2.3
 ```
 
 ## Maintenance

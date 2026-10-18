@@ -33,4 +33,4 @@ git push origin main
 
 echo -e "${GREEN}✅ Graph updated successfully!${NC}"
 echo ""
-echo "View your graph at: https://your-worker-subdomain.workers.dev/"
+echo "View your graph at: <worker-url>/ (it asks for your API key)"

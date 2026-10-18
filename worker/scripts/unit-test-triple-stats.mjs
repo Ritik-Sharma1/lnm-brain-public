@@ -14,11 +14,11 @@ function t(name, fn){ try{ fn(); console.log("ok -", name); pass++; }catch(e){ c
 // must NOT be counted as a triple row.
 t("counts triple rows, excludes :index keys", () => {
   const keys = [
-    { name: "triple:ritik-sharma:role" },
-    { name: "triple:ritik-sharma:location" },
-    { name: "triple:ritik-sharma:index" },
-    { name: "triple:sharpsites:domain" },
-    { name: "triple:sharpsites:index" },
+    { name: "triple:brain-owner:role" },
+    { name: "triple:brain-owner:location" },
+    { name: "triple:brain-owner:index" },
+    { name: "triple:acme-corp:domain" },
+    { name: "triple:acme-corp:index" },
   ];
   const r = countTriplesFromKeys(keys);
   assert.strictEqual(r.triples, 3);
@@ -31,8 +31,8 @@ t("zero keys → zero triples, never undefined", () => {
 });
 t("ignores non-triple keys mixed in", () => {
   const keys = [
-    { name: "entity:ritik:meta" },
-    { name: "triple:ritik-sharma:role" },
+    { name: "entity:brain-owner:meta" },
+    { name: "triple:brain-owner:role" },
     { name: "obs:meta:abc" },
   ];
   assert.strictEqual(countTriplesFromKeys(keys).triples, 1);

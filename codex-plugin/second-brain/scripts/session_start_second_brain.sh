@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-# SessionStart: load compact Second Brain context. Public template contains no personal style overrides.
+# SessionStart: load a compact Second Brain bootstrap (latest handoff, open threads, recent captures).
+# Reads BRAIN_BASE_URL + BRAIN_API_KEY from ~/.config/lnm-brain/config (written by setup-global-hooks.sh).
 set -uo pipefail
 
-API_KEY="${BRAIN_API_KEY:-YOUR_API_KEY}"
-BASE_URL="${BRAIN_BASE_URL:-https://your-worker-subdomain.workers.dev}"
+CONFIG="${LNM_BRAIN_CONFIG:-$HOME/.config/lnm-brain/config}"
+[ -f "$CONFIG" ] && . "$CONFIG"
+if [ -z "${BRAIN_API_KEY:-}" ] || [ -z "${BRAIN_BASE_URL:-}" ]; then
+  printf '[second-brain] Not configured: run scripts/setup-global-hooks.sh from your lnm-brain-public clone.\n'
+  exit 0
+fi
 
 SUMMARY=$(curl -sf --max-time 8 \
-  -H "x-api-key: $API_KEY" \
-  "$BASE_URL/api/session_start_summary" 2>/dev/null || echo "")
+  -H "X-API-Key: $BRAIN_API_KEY" \
+  "$BRAIN_BASE_URL/api/session_start_summary" 2>/dev/null || echo "")
 
 SESSION_IDX=$(curl -sf --max-time 8 \
-  -H "x-api-key: $API_KEY" \
-  "$BASE_URL/mcp" \
+  -H "X-API-Key: $BRAIN_API_KEY" \
+  "$BRAIN_BASE_URL/mcp" \
   -X POST \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_session_index","arguments":{"limit":5}}}' \
@@ -36,8 +41,8 @@ d=json.load(sys.stdin)
 files=d.get('last_session_files',[])[:5]
 threads=d.get('open_threads',[])[:3]
 decisions=d.get('recent_decisions',[])[:3]
-if files: print('Last session ('+d.get('last_session_date','?')+'): '+', '.join(files))
-if threads: print('Open threads: '+', '.join(threads))
+if files: print('Last session ('+str(d.get('last_session_date','?'))+'): '+', '.join(files))
+if threads: print('Open threads: '+', '.join(str(t) for t in threads))
 if decisions: print('Recent decisions: '+', '.join(x.get('title','?') for x in decisions))
 " 2>/dev/null || echo "")
   if [ -n "$LAST_FILES" ]; then
