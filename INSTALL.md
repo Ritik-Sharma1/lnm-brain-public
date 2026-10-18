@@ -4,7 +4,8 @@ LNM Brain is a memory for your AI tools that you host yourself. It runs on your 
 Cloudflare account, keeps every note in your own private GitHub repo, and plugs into
 Claude Code, the Claude app (web, desktop, phone) and any other MCP client.
 
-**Time:** about TIME_TBD minutes the first time. **Cost:** Cloudflare Workers Paid, $5/month, is
+**Time:** about 20 minutes the first time if you already have GitHub and Cloudflare accounts
+(measured in a fresh test install; add about 10 minutes to create them). **Cost:** Cloudflare Workers Paid, $5/month, is
 recommended ([why](#cost-free-vs-paid)). **Skill level:** you can copy commands into a terminal.
 
 > [!IMPORTANT]
@@ -247,7 +248,9 @@ curl -s -X POST "$URL/capture" -H "X-API-Key: $KEY" -H "Content-Type: applicatio
 curl -s -G "$URL/recall" -H "X-API-Key: $KEY" --data-urlencode "q=second brain live" | head -c 400; echo
 ```
 
-A minute later the note also appears as a file under `raw/` in your GitHub repo.
+Within seconds the note also appears as files under `raw/` and `wiki/` in your GitHub repo.
+Keyword search finds a new note at once; meaning-based (semantic) search finds it a minute
+or two later, while Cloudflare indexes the vectors in the background.
 
 ## Step 9. Connect Claude Code
 
@@ -385,6 +388,8 @@ connector (Step 10), and re-run Step 11 with the new key.
 | Claude app connector won't connect | The URL must end in `/mcp` (plus `?key=…` if you didn't use a request header). Test it: `curl -s -X POST "<worker-url>/mcp" -H "X-API-Key: <key>" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \| head -c 200` |
 | Hooks do nothing | Restart Claude Code. Check `~/.cache/lnm-brain/capture.log`, and run `bash ~/.config/lnm-brain/hooks/session_start_second_brain.sh` to see its output. |
 | Lost the GitHub token, or it expired | Make a new one (Step 7) and run `npx wrangler secret put GITHUB_TOKEN` again. Revoke the old one on the same GitHub page. |
+| A brand-new note isn't found by meaning, only by exact words | Normal for the first minute or two: Vectorize indexes new vectors in the background. |
+| Hook captures fail with `HTTP 403` and `error code: 1010` in `~/.cache/lnm-brain/capture.log` | Cloudflare blocks Python's default User-Agent. Re-run Step 11 from an up-to-date clone (the hooks now send their own). |
 | More than one Cloudflare account | Add `account_id = "<id>"` to `wrangler.toml` (Step 2). |
 
 ## Uninstall
